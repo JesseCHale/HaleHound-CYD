@@ -739,7 +739,84 @@ Insert a MicroSD card (FAT32 formatted) for payload storage and data capture.
 
 ---
 
-## Build and Flash
+## Pre-Compiled Binaries
+
+Pre-compiled firmware binaries are available in the `flash_package/` folder for users who don't want to build from source.
+
+### Display Rotation Variants
+
+CYD boards ship with different LCD panel orientations depending on the manufacturer and batch. Four firmware variants are provided to cover all known panel types:
+
+| Variant | Files | Description |
+|---------|-------|-------------|
+| **Standard** | `HaleHound-CYD-Standard` | Default rotation — USB port at bottom, portrait mode |
+| **180** | `HaleHound-CYD-180` | 180° rotated — for boards with inverted panels |
+| **90CW** | `HaleHound-CYD-90CW` | 90° clockwise — for boards with sideways panels |
+| **90CCW** | `HaleHound-CYD-90CCW` | 90° counter-clockwise — for boards with sideways panels (opposite direction) |
+
+**How to pick:** Flash "Standard" first. If the display is upside-down, use "180". If sideways, try "90CW" then "90CCW". The correct orientation is portrait (taller than wide) with the HaleHound logo right-side up and USB at the bottom.
+
+### Flash Methods
+
+Each variant is available in two formats:
+
+| Format | File Suffix | Flash Address | Notes |
+|--------|-------------|---------------|-------|
+| **Single File** | `-FULL.bin` | `0x0` | One file, easiest method. Works for most boards. |
+| **Four File** | `.bin` (no FULL) | `0x10000` | Requires 3 shared boot files. Works on ALL boards. |
+
+If the single-file method gives you a black screen, use the four-file method instead. Some boards have flash mode incompatibilities (DIO vs QIO) that only the four-file method handles correctly.
+
+### Flash with ESP Web Flasher (No Install)
+
+1. Open [esp.huhn.me](https://esp.huhn.me) in **Chrome**, **Edge**, or **Opera** (Firefox/Safari not supported)
+2. Click **Connect** and select your CYD's serial port
+3. **Single file method:** Set address `0x0`, select your `*-FULL.bin` file
+4. **Four file method:** Add all four entries:
+   - `0x1000` → `bootloader.bin`
+   - `0x8000` → `partitions.bin`
+   - `0xe000` → `boot_app0.bin`
+   - `0x10000` → Your rotation variant `.bin`
+5. Click **Program** and wait for completion
+6. Power cycle the CYD (unplug and replug USB)
+
+### Flash with esptool (Command Line)
+
+```bash
+# Single file method
+esptool.py --chip esp32 --baud 115200 write_flash 0x0 HaleHound-CYD-Standard-FULL.bin
+
+# Four file method
+esptool.py --chip esp32 --baud 115200 write_flash \
+  0x1000 bootloader.bin \
+  0x8000 partitions.bin \
+  0xe000 boot_app0.bin \
+  0x10000 HaleHound-CYD-Standard.bin
+```
+
+### CH340 USB Driver
+
+CYD boards use the CH340 USB-to-serial chip. Install the driver if your computer doesn't recognize the board:
+- **Windows:** [CH341SER.EXE](https://www.wch-ic.com/downloads/CH341SER_EXE.html)
+- **macOS:** [CH341SER_MAC.ZIP](https://www.wch-ic.com/downloads/CH341SER_MAC_ZIP.html)
+- **Linux:** Built into kernel 5.x+ (no install needed)
+
+### Troubleshooting Pre-Compiled Bins
+
+| Problem | Solution |
+|---------|----------|
+| Black screen after single-file flash | Use the four-file method instead |
+| Display sideways or upside-down | Flash a different rotation variant |
+| Touch backwards or offset | Use the matching rotation variant, or try Tools → Touch Calibrate |
+| "Failed to connect" error | Hold BOOT button while clicking Program |
+| Browser doesn't show serial port | Use Chrome/Edge/Opera and install CH340 driver |
+| Flashing completes but won't boot | Erase flash first: `esptool.py --chip esp32 erase_flash` then reflash |
+
+See `flash_package/FLASH_INSTRUCTIONS.txt` for complete step-by-step instructions.
+
+---
+
+## Build from Source
 
 ### Prerequisites
 
@@ -873,6 +950,7 @@ Three devices share the VSPI bus (GPIO 18/19/23). The `spi_manager` module handl
 | Speaker unavailable | By design | GPIO 26 repurposed for serial monitor RX |
 | Python 3.14 breaks PlatformIO build | Platform bug | Patch `platform.py` or use Python 3.10-3.13 |
 | NRF24+PA+LNA random resets | Power issue | Add 10uF capacitor between VCC/GND at module |
+| CYD boards have different LCD panel orientations | Hardware variance | Flash the matching rotation variant (Standard, 180, 90CW, or 90CCW) |
 | Touch may need recalibration per-unit | Hardware variance | Use Tools → Touch Calibrate |
 | 3.5" CYD board untested | Pending | Pin defines ready in cyd_config.h, needs validation |
 

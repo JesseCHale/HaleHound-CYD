@@ -4,10 +4,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // HaleHound-CYD Touch Button Handler
 // Replaces PCF8574 I2C button expander with touchscreen zones
-// Uses SOFTWARE BIT-BANGED SPI (CYD28_TouchscreenR from Bruce firmware)
+// Uses SOFTWARE BIT-BANGED SPI (CYD28_TouchscreenR by Piotr Zapart / hexefx.com)
 // to avoid conflict with NRF24/CC1101 on hardware VSPI
 // Created: 2026-02-06
-// Updated: 2026-02-11 - Switched to Bruce's proven touch library
+// Updated: 2026-02-11 - Switched to Piotr Zapart's CYD28_TouchscreenR library
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include <Arduino.h>

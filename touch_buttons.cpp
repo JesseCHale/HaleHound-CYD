@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // HaleHound-CYD Touch Button Implementation
 // Replaces PCF8574 I2C button expander with touchscreen zones
-// Uses SOFTWARE BIT-BANGED SPI (from Bruce firmware) to avoid VSPI conflict
-// with NRF24/CC1101 radios. This is the proven working approach.
+// Uses SOFTWARE BIT-BANGED SPI (CYD28_TouchscreenR by Piotr Zapart / hexefx.com)
+// to avoid VSPI conflict with NRF24/CC1101 radios. Proven working approach.
 // Created: 2026-02-06
-// Updated: 2026-02-11 - Switched to Bruce's CYD28_TouchscreenR library
+// Updated: 2026-02-11 - Switched to Piotr Zapart's CYD28_TouchscreenR library
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "touch_buttons.h"
@@ -19,7 +19,7 @@
 // Touch pins: CLK=25, MOSI=32, MISO=39, CS=33, IRQ=36
 // ═══════════════════════════════════════════════════════════════════════════
 
-// CYD28 touch controller instance (from Bruce firmware)
+// CYD28 touch controller instance (Piotr Zapart / hexefx.com, MIT license)
 // Uses software SPI when begin() is called without SPI parameter
 // Portrait mode (240x320) to match TFT rotation 0
 CYD28_TouchR touch(CYD_SCREEN_WIDTH, CYD_SCREEN_HEIGHT);

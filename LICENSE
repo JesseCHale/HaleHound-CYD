@@ -49,8 +49,8 @@
 
                               MIT LICENSE
 
-Copyright (c) 2023 CiferTech (original ESP32-DIV foundation)
-Copyright (c) 2026 Jesse C. Hale (HaleHound-CYD Edition - substantial rewrite)
+Copyright (c) 2026 Jesse C. Hale (HaleHound-CYD Edition)
+Copyright (c) 2023 CiferTech (original ESP32-DIV)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -174,10 +174,6 @@ Users are responsible for compliance with all applicable third-party licenses.
 When using, modifying, or distributing this software, the following
 attribution requirements apply:
 
-ORIGINAL WORK ATTRIBUTION:
-  - CiferTech created the original ESP32-DIV foundation
-  - Original project: https://github.com/cifertech/ESP32-DIV
-
 HALEHOUND-CYD ATTRIBUTION:
   - Jesse C. Hale (JesseCHale) developed the HaleHound-CYD Edition
   - HaleHound-CYD: https://github.com/JesseCHale/HaleHound-CYD
@@ -185,15 +181,13 @@ HALEHOUND-CYD ATTRIBUTION:
 FOR DIRECT USE:
   - Retain this LICENSE file in any distribution
   - Maintain copyright notices in source files
-  - Both original and HaleHound copyrights must be preserved
 
 FOR MODIFICATIONS AND FORKS:
-  - Include both original copyright notices
+  - Include original copyright notice
   - Clearly indicate modifications made
   - Suggested attribution format:
 
     "Based on HaleHound-CYD by Jesse C. Hale"
-    "Original ESP32-DIV by CiferTech"
     "https://github.com/JesseCHale/HaleHound-CYD"
 
 FOR DERIVATIVE WORKS:
@@ -315,10 +309,6 @@ Always verify pin mappings and hardware compatibility before use.
   GitHub:       https://github.com/JesseCHale
   Repository:   https://github.com/JesseCHale/HaleHound-CYD
   Issues:       https://github.com/JesseCHale/HaleHound-CYD/issues
-
-ORIGINAL PROJECT:
-  CiferTech:    https://github.com/cifertech
-  Original:     https://github.com/cifertech/ESP32-DIV
 
 
 ================================================================================
