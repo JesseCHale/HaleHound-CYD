@@ -551,3 +551,34 @@ GPSStatus gpsGetStatus() {
 uint8_t gpsGetSatellites() {
     return currentData.satellites;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BACKGROUND GPS — for wardriving and other modules that need live GPS
+// without the full GPS screen UI
+// ═══════════════════════════════════════════════════════════════════════════
+
+void gpsStartBackground() {
+    // Kill UART0 (Serial) to free GPIO 3 for GPS UART2
+    Serial.end();
+    delay(50);
+
+    if (gpsInitialized && gpsActivePin >= 0) {
+        // GPS was scanned before — reopen UART2 on the known working pin
+        gpsSerial.begin(gpsActiveBaud, SERIAL_8N1, gpsActivePin, -1);
+    } else {
+        // Never scanned — use default pin (GPIO 3 P1 connector @ 9600)
+        gpsActivePin = GPS_RX_PIN;
+        gpsActiveBaud = GPS_BAUD;
+        gpsSerial.begin(gpsActiveBaud, SERIAL_8N1, gpsActivePin, -1);
+        gpsInitialized = true;
+    }
+
+    // Drain any garbage from buffer
+    while (gpsSerial.available()) gpsSerial.read();
+}
+
+void gpsStopBackground() {
+    gpsSerial.end();
+    delay(50);
+    Serial.begin(115200);
+}

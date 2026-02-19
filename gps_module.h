@@ -94,4 +94,15 @@ GPSStatus gpsGetStatus();
 // Get number of satellites in view
 uint8_t gpsGetSatellites();
 
+// ═══════════════════════════════════════════════════════════════════════════
+// BACKGROUND GPS (for wardriving — no screen, no scan)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Start GPS in background mode — kills Serial to free GPIO 3, opens UART2
+// Call gpsUpdate() periodically to feed the parser
+void gpsStartBackground();
+
+// Stop GPS background mode — closes UART2, restores Serial
+void gpsStopBackground();
+
 #endif // GPS_MODULE_H

@@ -55,6 +55,7 @@ static unsigned long wdLastDisplay = 0;
 static unsigned long wdLastBlink = 0;
 static bool wdBlinkState = false;
 static uint32_t wdScanCount = 0;
+static esp_err_t wdLastScanErr = ESP_OK;  // Track scan errors for TFT display
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ICON BAR — matches GPS/other screens
@@ -222,7 +223,14 @@ static void updateWDValues() {
     // SCANS value
     tft.fillRect(50, WD_STATS_Y + 18, 65, 10, HALEHOUND_BLACK);
     tft.setCursor(50, WD_STATS_Y + 18);
-    tft.print(wdScanCount);
+    if (wdLastScanErr != ESP_OK) {
+        // Show error code in red so it's visible on TFT
+        tft.setTextColor(0xF800);
+        tft.printf("E:0x%X", wdLastScanErr);
+    } else {
+        tft.setTextColor(stats.active ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
+        tft.print(wdScanCount);
+    }
 
     // STATUS value
     tft.fillRect(170, WD_STATS_Y + 18, 65, 10, HALEHOUND_BLACK);
@@ -313,7 +321,6 @@ static void updateWDValues() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void wdRunScan() {
-    // Use ESP-IDF scan (not Arduino WiFi.scan) to avoid conflicts
     wifi_scan_config_t scanConfig;
     memset(&scanConfig, 0, sizeof(scanConfig));
     scanConfig.ssid = NULL;
@@ -324,17 +331,27 @@ static void wdRunScan() {
     scanConfig.scan_time.active.min = 100;
     scanConfig.scan_time.active.max = 300;
 
-    esp_err_t err = esp_wifi_scan_start(&scanConfig, true);  // Blocking scan
+    // Attempt scan with retry on first failure
+    esp_err_t err = esp_wifi_scan_start(&scanConfig, true);
     if (err != ESP_OK) {
-        Serial.printf("[WARDRIVING] Scan failed: %d\n", err);
+        // Retry once after a delay — WiFi may need more settle time
+        delay(500);
+        err = esp_wifi_scan_start(&scanConfig, true);
+    }
+
+    if (err != ESP_OK) {
+        wdLastScanErr = err;
         return;
     }
+
+    wdLastScanErr = ESP_OK;
 
     uint16_t apCount = 0;
     esp_wifi_scan_get_ap_num(&apCount);
 
     if (apCount == 0) {
         esp_wifi_scan_get_ap_records(&apCount, NULL);
+        wdScanCount++;
         return;
     }
 
@@ -344,10 +361,14 @@ static void wdRunScan() {
     wifi_ap_record_t* apRecords = (wifi_ap_record_t*)malloc(sizeof(wifi_ap_record_t) * apCount);
     if (!apRecords) {
         esp_wifi_scan_get_ap_records(&apCount, NULL);
+        wdScanCount++;
         return;
     }
 
     esp_wifi_scan_get_ap_records(&apCount, apRecords);
+
+    // Feed GPS before logging so coordinates are fresh
+    gpsUpdate();
 
     // Log through wardriving backend
     wardrivingLogScan(apRecords, apCount);
@@ -369,14 +390,21 @@ void wardrivingScreen() {
     wdLastBlink = 0;
     wdBlinkState = false;
     wdScanCount = 0;
+    wdLastScanErr = ESP_OK;
 
     // Init WiFi in STA mode for scanning
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
-    delay(100);
+    delay(200);
 
-    // Feed GPS parser
-    gpsUpdate();
+    // Start GPS in background — kills Serial to free GPIO 3, opens UART2
+    gpsStartBackground();
+
+    // Let GPS UART settle and collect a few sentences
+    for (int i = 0; i < 50; i++) {
+        gpsUpdate();
+        delay(10);
+    }
 
     // Init SD card through wardriving backend
     wardrivingInit();
@@ -454,4 +482,7 @@ void wardrivingScreen() {
 
     // Kill WiFi
     esp_wifi_stop();
+
+    // Stop GPS background and restore Serial
+    gpsStopBackground();
 }

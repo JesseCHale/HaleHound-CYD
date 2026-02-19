@@ -44,6 +44,7 @@
 #include "eapol_capture.h"
 #include "karma_attack.h"
 #include "saved_captures.h"
+#include "radio_test.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBAL OBJECTS
@@ -199,13 +200,14 @@ const unsigned char *sigint_submenu_icons[sigint_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_go_back
 };
 
-// Tools Submenu - 5 items
-const int tools_NUM_SUBMENU_ITEMS = 5;
+// Tools Submenu - 6 items
+const int tools_NUM_SUBMENU_ITEMS = 6;
 const char *tools_submenu_items[tools_NUM_SUBMENU_ITEMS] = {
     "Serial Monitor",
     "Update Firmware",
     "Touch Calibrate",
     "GPS",
+    "Radio Test",
     "Back to Main Menu"
 };
 
@@ -214,6 +216,7 @@ const unsigned char *tools_submenu_icons[tools_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_follow,
     bitmap_icon_stat,
     bitmap_icon_antenna,
+    bitmap_icon_signal,
     bitmap_icon_go_back
 };
 
@@ -1108,7 +1111,7 @@ void handleToolsSubmenuTouch() {
             displaySubmenu();
             delay(200);
 
-            if (current_submenu_index == 4) { // Back
+            if (current_submenu_index == 5) { // Back
                 returnToMainMenu();
                 return;
             }
@@ -1123,6 +1126,13 @@ void handleToolsSubmenuTouch() {
             // GPS - launch GPS screen
             if (current_submenu_index == 3) {
                 gpsScreen();
+                returnToSubmenu();
+                break;
+            }
+
+            // Radio Test - SPI radio hardware verification
+            if (current_submenu_index == 4) {
+                radioTestScreen();
                 returnToSubmenu();
                 break;
             }
