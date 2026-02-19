@@ -1662,11 +1662,15 @@ static bool uiInitialized = false;
 // Channel arrays for different protocols
 static const byte bluetooth_channels[] = {32, 34, 46, 48, 50, 52, 0, 1, 2, 4, 6, 8, 22, 24, 26, 28, 30, 74, 76, 78, 80};
 static const byte ble_channels[] = {2, 26, 80};
-static const byte WiFi_channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+static const byte WiFi_channels[] = {
+    2, 7, 12, 17, 22,     // WiFi Ch 1 (2412MHz ±11MHz)
+    27, 32, 37, 42, 47,   // WiFi Ch 6 (2437MHz ±11MHz)
+    52, 57, 62, 67, 72    // WiFi Ch 11 (2462MHz ±11MHz)
+};
 static const byte usbWireless_channels[] = {40, 50, 60};
 static const byte videoTransmitter_channels[] = {70, 75, 80};
-static const byte rc_channels[] = {1, 3, 5, 7};
-static const byte zigbee_channels[] = {11, 15, 20, 25};
+static const byte rc_channels[] = {10, 30, 50, 70};
+static const byte zigbee_channels[] = {5, 25, 50, 75};
 static const byte nrf24_channels[] = {76, 78, 79};
 
 #define PK_LINE_HEIGHT 12
