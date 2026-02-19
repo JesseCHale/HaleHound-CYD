@@ -125,7 +125,7 @@ static void formatSize(uint32_t bytes, char* buf, int bufLen) {
 
 static void drawSCIconBar() {
     tft.fillRect(0, 20, tft.width(), 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, tft.width(), 36, HALEHOUND_HOTPINK);
 }
 
@@ -642,7 +642,7 @@ static void drawFileRow(int screenRow, int fileIdx, bool selected) {
     tft.setTextDatum(TL_DATUM);
     tft.setFreeFont(NULL);
     tft.setTextSize(1);
-    tft.setTextColor(selected ? TFT_WHITE : HALEHOUND_CYAN);
+    tft.setTextColor(selected ? TFT_WHITE : HALEHOUND_MAGENTA);
 
     // Truncate filename for display
     char displayName[22];
@@ -760,7 +760,7 @@ static void drawDetailView() {
     tft.drawRoundRect(11, 65, 218, 98, 4, HALEHOUND_VIOLET);
 
     // Detail line 1
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.drawString(detailLine1, 120, 75);
 
     // Detail line 2
@@ -787,10 +787,10 @@ static void drawDetailView() {
     // Three action buttons: VIEW | SERIAL | DELETE
     // Row at y=180
     // VIEW button
-    tft.drawRoundRect(8, 180, 70, 32, 4, HALEHOUND_CYAN);
-    tft.drawRoundRect(9, 181, 68, 30, 4, HALEHOUND_CYAN);
+    tft.drawRoundRect(8, 180, 70, 32, 4, HALEHOUND_MAGENTA);
+    tft.drawRoundRect(9, 181, 68, 30, 4, HALEHOUND_MAGENTA);
     tft.setTextDatum(TC_DATUM);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.drawString("VIEW", 43, 190);
 
     // SERIAL button
@@ -833,7 +833,7 @@ static void drawDeleteConfirm() {
     char nameBuf[28];
     strncpy(nameBuf, files[selectedIndex].name, 27);
     nameBuf[27] = '\0';
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.drawString(nameBuf, 120, 148);
 
     // YES / NO buttons
@@ -841,8 +841,8 @@ static void drawDeleteConfirm() {
     tft.setTextColor(HALEHOUND_HOTPINK);
     tft.drawString("YES", 70, 173);
 
-    tft.drawRoundRect(135, 168, 70, 24, 3, HALEHOUND_CYAN);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.drawRoundRect(135, 168, 70, 24, 3, HALEHOUND_MAGENTA);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.drawString("NO", 170, 173);
 
     tft.setTextDatum(TL_DATUM);
@@ -883,12 +883,12 @@ static void drawViewScreen() {
             tft.setTextColor(HALEHOUND_HOTPINK);
         } else if (viewLines[i][0] == ' ' && (viewLines[i][1] >= '0' && viewLines[i][1] <= '9' ||
                    viewLines[i][1] >= 'a' && viewLines[i][1] <= 'f')) {
-            tft.setTextColor(HALEHOUND_CYAN);  // Hex data
+            tft.setTextColor(HALEHOUND_MAGENTA);  // Hex data
         } else if (strncmp(viewLines[i], "AP:", 3) == 0 ||
                    strncmp(viewLines[i], "STA:", 4) == 0) {
-            tft.setTextColor(HALEHOUND_CYAN);
+            tft.setTextColor(HALEHOUND_MAGENTA);
         } else if (strncmp(viewLines[i], "SSID:", 5) == 0) {
-            tft.setTextColor(HALEHOUND_CYAN);
+            tft.setTextColor(HALEHOUND_MAGENTA);
         } else if (strncmp(viewLines[i], "hashcat", 7) == 0 ||
                    strncmp(viewLines[i], "CRACK:", 6) == 0) {
             tft.setTextColor(HALEHOUND_HOTPINK);
@@ -980,7 +980,7 @@ static void handleDetailTouch(int tx, int ty) {
         dumpToSerial(selectedIndex);
 
         // Show confirmation
-        tft.fillRoundRect(86, 181, 68, 30, 4, HALEHOUND_CYAN);
+        tft.fillRoundRect(86, 181, 68, 30, 4, HALEHOUND_MAGENTA);
         tft.setTextDatum(TC_DATUM);
         tft.setTextColor(TFT_BLACK);
         tft.drawString("SENT!", 120, 190);

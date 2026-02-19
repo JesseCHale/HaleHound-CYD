@@ -18,9 +18,9 @@
 
 // Draw icon bar with back icon - MATCHES ORIGINAL HALEHOUND
 static void drawSubconfigUI() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_GUNMETAL);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, SC_ICON_SIZE, SC_ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, SC_ICON_SIZE, SC_ICON_SIZE, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
 
@@ -62,9 +62,9 @@ void saveSetup() {
     drawCenteredText(50, "SAVED PROFILES", HALEHOUND_HOTPINK, 2);
 
     // Show stub message
-    drawCenteredText(90, "COMING SOON", HALEHOUND_CYAN, 2);
+    drawCenteredText(90, "COMING SOON", HALEHOUND_MAGENTA, 2);
 
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setTextSize(1);
     tft.setCursor(10, 130);
     tft.print("SubGHz Saved Profiles will");
@@ -126,9 +126,9 @@ void subjammerSetup() {
     tft.setTextColor(HALEHOUND_HOTPINK);
     tft.setTextSize(2);
     drawCenteredText(50, "SUBGHZ JAMMER", HALEHOUND_HOTPINK, 2);
-    drawCenteredText(90, "CC1101 REQUIRED", HALEHOUND_CYAN, 2);
+    drawCenteredText(90, "CC1101 REQUIRED", HALEHOUND_MAGENTA, 2);
 
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setTextSize(1);
     tft.setCursor(10, 130);
     tft.print("SubGHz Jammer requires");
@@ -182,9 +182,9 @@ void subBruteSetup() {
     tft.setTextColor(HALEHOUND_HOTPINK);
     tft.setTextSize(2);
     drawCenteredText(50, "BRUTE FORCE", HALEHOUND_HOTPINK, 2);
-    drawCenteredText(90, "CC1101 REQUIRED", HALEHOUND_CYAN, 2);
+    drawCenteredText(90, "CC1101 REQUIRED", HALEHOUND_MAGENTA, 2);
 
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setTextSize(1);
     tft.setCursor(10, 130);
     tft.print("SubGHz Brute Force requires");

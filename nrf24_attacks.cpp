@@ -78,11 +78,11 @@ static unsigned long nrfLastAnim = 0;
 
 // Draw icon bar with 3 icons - MATCHES ORIGINAL HALEHOUND
 static void drawNrfIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_GUNMETAL);
     for (int i = 0; i < NRF_ICON_NUM; i++) {
         if (nrfIcons[i] != NULL) {
-            tft.drawBitmap(nrfIconX[i], 20, nrfIcons[i], NRF_ICON_SIZE, NRF_ICON_SIZE, HALEHOUND_CYAN);
+            tft.drawBitmap(nrfIconX[i], 20, nrfIcons[i], NRF_ICON_SIZE, NRF_ICON_SIZE, HALEHOUND_MAGENTA);
         }
     }
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
@@ -113,7 +113,7 @@ static int checkNrfIconTouch() {
 static int processNrfIconAnim() {
     if (nrfAnimState > 0 && millis() - nrfLastAnim >= 50) {
         if (nrfAnimState == 1) {
-            tft.drawBitmap(nrfIconX[nrfActiveIcon], 20, nrfIcons[nrfActiveIcon], NRF_ICON_SIZE, NRF_ICON_SIZE, HALEHOUND_CYAN);
+            tft.drawBitmap(nrfIconX[nrfActiveIcon], 20, nrfIcons[nrfActiveIcon], NRF_ICON_SIZE, NRF_ICON_SIZE, HALEHOUND_MAGENTA);
             nrfAnimState = 2;
             int action = nrfActiveIcon;
             nrfLastAnim = millis();
@@ -302,10 +302,10 @@ static void clearBarGraph() {
 
 static void drawScannerFrame() {
     // Y-axis line
-    tft.drawFastVLine(BAR_START_X - 2, BAR_START_Y, BAR_HEIGHT, HALEHOUND_CYAN);
+    tft.drawFastVLine(BAR_START_X - 2, BAR_START_Y, BAR_HEIGHT, HALEHOUND_MAGENTA);
 
     // X-axis line
-    tft.drawFastHLine(BAR_START_X, BAR_START_Y + BAR_HEIGHT, BAR_WIDTH, HALEHOUND_CYAN);
+    tft.drawFastHLine(BAR_START_X, BAR_START_Y + BAR_HEIGHT, BAR_WIDTH, HALEHOUND_MAGENTA);
 
     // WiFi channel markers - vertical dashed lines
     int x1 = BAR_START_X + (WIFI_CH1_NRF * BAR_WIDTH / SCAN_CHANNELS);
@@ -334,7 +334,7 @@ static void drawScannerFrame() {
     tft.print("13");
 
     // Frequency labels
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(BAR_START_X - 5, BAR_START_Y + BAR_HEIGHT + 4);
     tft.print("2400");
     tft.setCursor(BAR_START_X + BAR_WIDTH/2 - 12, BAR_START_Y + BAR_HEIGHT + 4);
@@ -407,7 +407,7 @@ static void drawBarGraph() {
     tft.print("PEAK: ");
     tft.setTextColor(HALEHOUND_BRIGHT, TFT_BLACK);
     tft.print(peakFreq);
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.print(" MHz");
 
     // Skull signal meter - row of 8 skulls
@@ -489,7 +489,7 @@ static void calibrateBackgroundNoise() {
     noiseCalibrated = true;
 
     tft.fillRect(10, BAR_START_Y + BAR_HEIGHT + 40, 220, 20, TFT_BLACK);
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(10, BAR_START_Y + BAR_HEIGHT + 40);
     tft.print("Noise floor captured!");
 }
@@ -546,7 +546,7 @@ void scannerSetup() {
 
     // Title
     tft.fillRect(0, 20, 160, 16, HALEHOUND_GUNMETAL);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setTextSize(1);
     tft.setCursor(35, 24);
     tft.print("2.4GHz Scanner");
@@ -559,8 +559,8 @@ void scannerSetup() {
         tft.setTextSize(2);
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
-        drawCenteredText(130, "Check wiring:", HALEHOUND_CYAN, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_CYAN, 1);
+        drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
         drawCenteredText(160, "Add 10uF cap on VCC!", HALEHOUND_VIOLET, 1);
         return;
     }
@@ -834,10 +834,10 @@ static void drawWiFiMarkers() {
 }
 
 static void drawAxes() {
-    tft.drawLine(GRAPH_X - 2, GRAPH_Y, GRAPH_X - 2, GRAPH_Y + GRAPH_HEIGHT, HALEHOUND_CYAN);
-    tft.drawLine(GRAPH_X, GRAPH_Y + GRAPH_HEIGHT, GRAPH_X + GRAPH_WIDTH, GRAPH_Y + GRAPH_HEIGHT, HALEHOUND_CYAN);
+    tft.drawLine(GRAPH_X - 2, GRAPH_Y, GRAPH_X - 2, GRAPH_Y + GRAPH_HEIGHT, HALEHOUND_MAGENTA);
+    tft.drawLine(GRAPH_X, GRAPH_Y + GRAPH_HEIGHT, GRAPH_X + GRAPH_WIDTH, GRAPH_Y + GRAPH_HEIGHT, HALEHOUND_MAGENTA);
 
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setTextSize(1);
     tft.setCursor(GRAPH_X - 5, GRAPH_Y + GRAPH_HEIGHT + 3);
     tft.print("2400");
@@ -932,7 +932,7 @@ static void drawStatusArea() {
         }
     }
 
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setTextSize(1);
     tft.setCursor(5, 305);
     tft.printf("Peak:%dMHz Lv:%d", 2400 + peakCh, peakVal);
@@ -949,7 +949,7 @@ void analyzerSetup() {
 
     // Title
     tft.fillRect(0, 20, 200, 16, HALEHOUND_GUNMETAL);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setTextSize(1);
     tft.setCursor(25, 24);
     tft.print("2.4GHz SPECTRUM ANALYZER");
@@ -961,8 +961,8 @@ void analyzerSetup() {
         tft.setTextSize(2);
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
-        drawCenteredText(130, "Check wiring:", HALEHOUND_CYAN, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_CYAN, 1);
+        drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
         return;
     }
 
@@ -1127,11 +1127,11 @@ static int jamAnimState = 0;
 static unsigned long jamLastAnim = 0;
 
 static void drawJamIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_GUNMETAL);
     for (int i = 0; i < JAM_ICON_NUM; i++) {
         if (jamIcons[i] != NULL) {
-            tft.drawBitmap(jamIconX[i], 20, jamIcons[i], 16, 16, HALEHOUND_CYAN);
+            tft.drawBitmap(jamIconX[i], 20, jamIcons[i], 16, 16, HALEHOUND_MAGENTA);
         }
     }
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
@@ -1160,7 +1160,7 @@ static int checkJamIconTouch() {
 static int processJamIconAnim() {
     if (jamAnimState > 0 && millis() - jamLastAnim >= 50) {
         if (jamAnimState == 1) {
-            tft.drawBitmap(jamIconX[jamActiveIcon], 20, jamIcons[jamActiveIcon], 16, 16, HALEHOUND_CYAN);
+            tft.drawBitmap(jamIconX[jamActiveIcon], 20, jamIcons[jamActiveIcon], 16, 16, HALEHOUND_MAGENTA);
             jamAnimState = 2;
             int action = jamActiveIcon;
             jamLastAnim = millis();
@@ -1196,7 +1196,7 @@ static void drawHeader() {
         drawGlitchStatus(72, "STANDBY", HALEHOUND_GUNMETAL);
     }
 
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(10, 70);
     if (currentWiFiChannel == ALL_CHANNELS_MODE) {
         tft.print("Mode: ALL WiFi Channels (1-13)");
@@ -1307,7 +1307,7 @@ static void drawJammerDisplay() {
     tft.fillRect(JAM_GRAPH_X, JAM_GRAPH_Y, JAM_GRAPH_WIDTH, JAM_GRAPH_HEIGHT, TFT_BLACK);
 
     // Draw frame
-    tft.drawRect(JAM_GRAPH_X - 1, JAM_GRAPH_Y - 1, JAM_GRAPH_WIDTH + 2, JAM_GRAPH_HEIGHT + 2, HALEHOUND_CYAN);
+    tft.drawRect(JAM_GRAPH_X - 1, JAM_GRAPH_Y - 1, JAM_GRAPH_WIDTH + 2, JAM_GRAPH_HEIGHT + 2, HALEHOUND_MAGENTA);
 
     int maxBarH = JAM_GRAPH_HEIGHT - 25;
 
@@ -1527,8 +1527,8 @@ void wlanjammerSetup() {
         tft.setTextSize(2);
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
-        drawCenteredText(130, "Check wiring:", HALEHOUND_CYAN, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_CYAN, 1);
+        drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
         uiInitialized = false;
         return;
     }
@@ -1691,11 +1691,11 @@ static int pkAnimState = 0;
 static unsigned long pkLastAnim = 0;
 
 static void drawPkIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_GUNMETAL);
     for (int i = 0; i < PK_ICON_NUM; i++) {
         if (pkIcons[i] != NULL) {
-            tft.drawBitmap(pkIconX[i], 20, pkIcons[i], 16, 16, HALEHOUND_CYAN);
+            tft.drawBitmap(pkIconX[i], 20, pkIcons[i], 16, 16, HALEHOUND_MAGENTA);
         }
     }
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
@@ -1724,7 +1724,7 @@ static int checkPkIconTouch() {
 static int processPkIconAnim() {
     if (pkAnimState > 0 && millis() - pkLastAnim >= 50) {
         if (pkAnimState == 1) {
-            tft.drawBitmap(pkIconX[pkActiveIcon], 20, pkIcons[pkActiveIcon], 16, 16, HALEHOUND_CYAN);
+            tft.drawBitmap(pkIconX[pkActiveIcon], 20, pkIcons[pkActiveIcon], 16, 16, HALEHOUND_MAGENTA);
             pkAnimState = 2;
             int action = pkActiveIcon;
             pkLastAnim = millis();
@@ -1899,8 +1899,8 @@ static void drawPkChannelMarkers() {
 
     for (int c = 0; c < numChannels; c++) {
         int x = PK_GRAPH_X + (channels[c] * PK_GRAPH_WIDTH / PK_NUM_BARS);
-        tft.drawFastVLine(x, markerY, 6, HALEHOUND_CYAN);
-        tft.drawFastVLine(x + 1, markerY, 6, HALEHOUND_CYAN);
+        tft.drawFastVLine(x, markerY, 6, HALEHOUND_MAGENTA);
+        tft.drawFastVLine(x + 1, markerY, 6, HALEHOUND_MAGENTA);
     }
 }
 
@@ -1912,7 +1912,7 @@ static void drawPkEqualizer() {
     tft.fillRect(PK_GRAPH_X, PK_GRAPH_Y, PK_GRAPH_WIDTH, PK_GRAPH_HEIGHT, TFT_BLACK);
 
     // Draw frame
-    tft.drawRect(PK_GRAPH_X - 1, PK_GRAPH_Y - 1, PK_GRAPH_WIDTH + 2, PK_GRAPH_HEIGHT + 2, HALEHOUND_CYAN);
+    tft.drawRect(PK_GRAPH_X - 1, PK_GRAPH_Y - 1, PK_GRAPH_WIDTH + 2, PK_GRAPH_HEIGHT + 2, HALEHOUND_MAGENTA);
 
     int maxBarH = PK_GRAPH_HEIGHT - 20;
 
@@ -2038,7 +2038,7 @@ static void drawPkMainUI() {
     tft.setFreeFont(NULL);
     tft.fillRect(0, 135, SCREEN_WIDTH, 20, TFT_BLACK);
     tft.setTextSize(1);
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(35, 140);
     tft.printf("CH: %03d", pkCurrentChannel);
     tft.setCursor(130, 140);
@@ -2052,7 +2052,7 @@ static void updatePkStats() {
     // Only update stats line (fast partial update)
     tft.setFreeFont(NULL);
     tft.setTextSize(1);
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
 
     // Channel
     tft.fillRect(35, 140, 70, 10, TFT_BLACK);
@@ -2104,8 +2104,8 @@ void prokillSetup() {
         tft.setTextSize(2);
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
-        drawCenteredText(130, "Check wiring:", HALEHOUND_CYAN, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_CYAN, 1);
+        drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
         uiInitialized = false;
         return;
     }

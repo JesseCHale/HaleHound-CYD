@@ -36,9 +36,9 @@ static int gpsActiveBaud = 9600;        // Which baud rate worked
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void drawGPSIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
 
@@ -132,7 +132,7 @@ static void updateGPSValues() {
                  fabs(currentData.latitude),
                  currentData.latitude >= 0 ? 'N' : 'S');
         tft.setFreeFont(&FreeMono9pt7b);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         tft.setCursor(12, 84);
         tft.print(buf);
 
@@ -157,7 +157,7 @@ static void updateGPSValues() {
 
     // ALT
     tft.fillRect(30, 122, 88, 10, TFT_BLACK);
-    tft.setTextColor(currentData.valid ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL);
+    tft.setTextColor(currentData.valid ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
     tft.setCursor(30, 122);
     if (currentData.valid) {
         snprintf(buf, sizeof(buf), "%.1fm", currentData.altitude);
@@ -168,7 +168,7 @@ static void updateGPSValues() {
 
     // SPD
     tft.fillRect(150, 122, 85, 10, TFT_BLACK);
-    tft.setTextColor(currentData.valid ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL);
+    tft.setTextColor(currentData.valid ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
     tft.setCursor(150, 122);
     if (currentData.valid) {
         snprintf(buf, sizeof(buf), "%.1f km/h", currentData.speed);
@@ -179,7 +179,7 @@ static void updateGPSValues() {
 
     // HDG
     tft.fillRect(30, 140, 88, 10, TFT_BLACK);
-    tft.setTextColor(currentData.valid ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL);
+    tft.setTextColor(currentData.valid ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
     tft.setCursor(30, 140);
     if (currentData.valid) {
         snprintf(buf, sizeof(buf), "%.1f deg", currentData.course);
@@ -190,7 +190,7 @@ static void updateGPSValues() {
 
     // SAT
     tft.fillRect(150, 140, 85, 10, TFT_BLACK);
-    tft.setTextColor(currentData.satellites > 0 ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL);
+    tft.setTextColor(currentData.satellites > 0 ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
     tft.setCursor(150, 140);
     snprintf(buf, sizeof(buf), "%d", currentData.satellites);
     tft.print(buf);
@@ -200,7 +200,7 @@ static void updateGPSValues() {
     tft.fillRect(155, 164, 80, 10, TFT_BLACK);
 
     if (currentData.valid && currentData.year > 2000) {
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
                  currentData.year, currentData.month, currentData.day);
         tft.setCursor(34, 164);
@@ -342,7 +342,7 @@ void gpsSetup() {
         // Show current attempt
         tft.fillRect(0, 110, SCREEN_WIDTH, 60, TFT_BLACK);
         tft.setTextSize(1);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         tft.setCursor(10, 115);
         tft.printf("Try %d/%d: %s", i + 1, numScans, scans[i].label);
 

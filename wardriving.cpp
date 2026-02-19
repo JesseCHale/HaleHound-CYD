@@ -316,7 +316,7 @@ void wardrivingDrawStatus(int x, int y) {
 
     // Active status
     if (stats.gpsReady) {
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
     } else {
         tft.setTextColor(HALEHOUND_HOTPINK);
     }
@@ -341,10 +341,10 @@ void wardrivingDrawIndicator(int x, int y) {
         }
 
         if (blink) {
-            tft.fillCircle(x + 3, y + 3, 3, stats.gpsReady ? HALEHOUND_CYAN : HALEHOUND_HOTPINK);
+            tft.fillCircle(x + 3, y + 3, 3, stats.gpsReady ? HALEHOUND_MAGENTA : HALEHOUND_HOTPINK);
         } else {
             tft.fillCircle(x + 3, y + 3, 3, HALEHOUND_DARK);
         }
-        tft.drawCircle(x + 3, y + 3, 3, HALEHOUND_CYAN);
+        tft.drawCircle(x + 3, y + 3, 3, HALEHOUND_MAGENTA);
     }
 }

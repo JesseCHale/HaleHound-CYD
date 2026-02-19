@@ -269,7 +269,7 @@ static void updateDisplay() {
     tft.setTextSize(1);
 
     // Frequency
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(5, 40);
     if (autoScanEnabled) {
         tft.setTextColor(autoScanPaused ? HALEHOUND_HOTPINK : HALEHOUND_BRIGHT);
@@ -279,7 +279,7 @@ static void updateDisplay() {
     } else {
         tft.setTextColor(HALEHOUND_BRIGHT);
         tft.print(frequencyList[currentFreqIndex] / 1000000.0, 3);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         tft.print(" MHz");
     }
 
@@ -324,10 +324,10 @@ static const unsigned char* raIcons[RA_ICON_NUM] = {
 
 // Draw icon bar - MATCHES ORIGINAL HALEHOUND
 static void drawReplayUI() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_GUNMETAL);
     for (int i = 0; i < RA_ICON_NUM; i++) {
-        tft.drawBitmap(raIconX[i], 20, raIcons[i], RA_ICON_SIZE, RA_ICON_SIZE, HALEHOUND_CYAN);
+        tft.drawBitmap(raIconX[i], 20, raIcons[i], RA_ICON_SIZE, RA_ICON_SIZE, HALEHOUND_MAGENTA);
     }
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
@@ -348,7 +348,7 @@ static void drawSignalCaptured() {
 
     // Draw capture panel with border
     tft.drawRect(20, 100, 200, 90, HALEHOUND_HOTPINK);
-    tft.drawRect(21, 101, 198, 88, HALEHOUND_CYAN);
+    tft.drawRect(21, 101, 198, 88, HALEHOUND_MAGENTA);
 
     // Header
     tft.setTextSize(1);
@@ -362,16 +362,16 @@ static void drawSignalCaptured() {
     tft.print(capturedValue);
 
     // Details row
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(30, 145);
     tft.print("P:");
     tft.setTextColor(HALEHOUND_BRIGHT);
     tft.print(capturedProtocol);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.print(" B:");
     tft.setTextColor(HALEHOUND_BRIGHT);
     tft.print(capturedBitLength);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.print(" ");
     tft.setTextColor(HALEHOUND_BRIGHT);
     if (autoScanEnabled) {
@@ -1039,7 +1039,7 @@ void sendSignal(unsigned long value, int bitLength, int protocol) {
     delay(500);
 
     tft.fillRect(0, 100, SCREEN_WIDTH, 80, HALEHOUND_BLACK);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(10, 120);
     tft.print("[+] Done!");
 
@@ -1296,10 +1296,10 @@ static const unsigned char* sjIcons[SJ_ICON_NUM] = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void drawIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_GUNMETAL);
     for (int i = 0; i < SJ_ICON_NUM; i++) {
-        uint16_t color = HALEHOUND_CYAN;
+        uint16_t color = HALEHOUND_MAGENTA;
         // Highlight start icon when jamming
         if (i == 1 && jamming) color = HALEHOUND_HOTPINK;
         // Highlight sweep icon when active
@@ -1323,13 +1323,13 @@ static void drawHeader() {
     }
 
     // Frequency info
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(10, 70);
     if (autoSweep) {
         tft.print("Mode: SWEEP ALL (");
         tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
         tft.printf("%.3f", frequencyListMHz[currentFreqIndex]);
-        tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+        tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
         tft.print(" MHz)");
     } else {
         tft.printf("Freq: %.3f MHz", frequencyListMHz[currentFreqIndex]);
@@ -1424,7 +1424,7 @@ static void drawJammerDisplay() {
     tft.fillRect(SJ_GRAPH_X, SJ_GRAPH_Y, SJ_GRAPH_WIDTH, SJ_GRAPH_HEIGHT, TFT_BLACK);
 
     // Draw frame
-    tft.drawRect(SJ_GRAPH_X - 1, SJ_GRAPH_Y - 1, SJ_GRAPH_WIDTH + 2, SJ_GRAPH_HEIGHT + 2, HALEHOUND_CYAN);
+    tft.drawRect(SJ_GRAPH_X - 1, SJ_GRAPH_Y - 1, SJ_GRAPH_WIDTH + 2, SJ_GRAPH_HEIGHT + 2, HALEHOUND_MAGENTA);
 
     int maxBarH = SJ_GRAPH_HEIGHT - 25;
 
@@ -1654,8 +1654,8 @@ void setup() {
         tft.setTextSize(2);
         drawCenteredText(100, "CC1101 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
-        drawCenteredText(130, "Check wiring:", HALEHOUND_CYAN, 1);
-        drawCenteredText(145, "CS=27 GDO0=22 GDO2=35", HALEHOUND_CYAN, 1);
+        drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, "CS=27 GDO0=22 GDO2=35", HALEHOUND_MAGENTA, 1);
         initialized = false;
         return;
     }
@@ -1936,10 +1936,10 @@ static const unsigned char* sbIcons[SB_ICON_NUM] = {
 };
 
 static void drawIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
     for (int i = 0; i < SB_ICON_NUM; i++) {
-        tft.drawBitmap(sbIconX[i], 20, sbIcons[i], SB_ICON_SIZE, SB_ICON_SIZE, HALEHOUND_CYAN);
+        tft.drawBitmap(sbIconX[i], 20, sbIcons[i], SB_ICON_SIZE, SB_ICON_SIZE, HALEHOUND_MAGENTA);
     }
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
@@ -2000,7 +2000,7 @@ static int txPulse = 0;
 static void drawEqualizer() {
     // Simple TX activity bar at bottom
     tft.fillRect(10, EQ_Y, 220, 20, HALEHOUND_BLACK);
-    tft.drawRoundRect(10, EQ_Y, 220, 20, 4, HALEHOUND_CYAN);
+    tft.drawRoundRect(10, EQ_Y, 220, 20, 4, HALEHOUND_MAGENTA);
 
     if (txPulse > 0) {
         int barW = min(txPulse * 2, 216);
@@ -2144,7 +2144,7 @@ static uint16_t getGradientColor(float ratio) {
 // Draw gradient progress bar
 static void drawGradientProgressBar(int x, int y, int w, int h, float progress) {
     // Border
-    tft.drawRoundRect(x - 1, y - 1, w + 2, h + 2, 3, HALEHOUND_CYAN);
+    tft.drawRoundRect(x - 1, y - 1, w + 2, h + 2, 3, HALEHOUND_MAGENTA);
 
     // Background
     tft.fillRoundRect(x, y, w, h, 2, HALEHOUND_DARK);
@@ -2185,7 +2185,7 @@ static void drawMainUI() {
 
     // Protocol name - big and centered
     tft.fillRect(15, 65, 210, 22, TFT_BLACK);
-    drawCenteredFreeFont(84, proto.name, HALEHOUND_CYAN, &FreeMonoBold12pt7b);
+    drawCenteredFreeFont(84, proto.name, HALEHOUND_MAGENTA, &FreeMonoBold12pt7b);
 
     // Frequency below protocol name
     char freqBuf[16];
@@ -2197,14 +2197,14 @@ static void drawMainUI() {
     tft.setFreeFont(NULL);
     tft.setTextSize(1);
     tft.setCursor(15, 120);
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.print("Mode: ");
     tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
     tft.print(useDeBruijn ? "DE BRUIJN" : "SEQUENTIAL");
 
     // Bits info
     tft.setCursor(140, 120);
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.print("Bits: ");
     tft.setTextColor(HALEHOUND_BRIGHT, TFT_BLACK);
     tft.print(proto.bitLength);
@@ -2245,7 +2245,7 @@ static void updateDisplay() {
         // Stats line
         tft.setFreeFont(NULL);
         tft.setTextSize(1);
-        tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+        tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
         tft.setCursor(15, 185);
         tft.printf("Code: %lu/%lu", currentCode, endCode);
 
@@ -2753,10 +2753,10 @@ static const unsigned char* saIcons[SA_ICON_NUM] = {
 
 // Draw icon bar
 static void drawAnalyzerUI() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_GUNMETAL);
     for (int i = 0; i < SA_ICON_NUM; i++) {
-        tft.drawBitmap(saIconX[i], 20, saIcons[i], SA_ICON_SIZE, SA_ICON_SIZE, HALEHOUND_CYAN);
+        tft.drawBitmap(saIconX[i], 20, saIcons[i], SA_ICON_SIZE, SA_ICON_SIZE, HALEHOUND_MAGENTA);
     }
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
@@ -3006,8 +3006,8 @@ static void drawLineGraph() {
     }
 
     // Phase 4: Redraw axes (may have been partially erased by line)
-    tft.drawFastHLine(WF_X, AXIS_Y, WF_WIDTH, HALEHOUND_CYAN);
-    tft.drawFastVLine(WF_X - 1, LG_Y, LG_HEIGHT + 1, HALEHOUND_CYAN);
+    tft.drawFastHLine(WF_X, AXIS_Y, WF_WIDTH, HALEHOUND_MAGENTA);
+    tft.drawFastVLine(WF_X - 1, LG_Y, LG_HEIGHT + 1, HALEHOUND_MAGENTA);
 
     // Save for next frame's erase
     memcpy(prevLineY, newLineY, sizeof(prevLineY));
@@ -3023,11 +3023,11 @@ static void drawStaticElements() {
     tft.drawFastHLine(0, SEP_Y, SCREEN_WIDTH, HALEHOUND_HOTPINK);
 
     // Line graph axes
-    tft.drawFastHLine(WF_X, AXIS_Y, WF_WIDTH, HALEHOUND_CYAN);            // X axis
-    tft.drawFastVLine(WF_X - 1, LG_Y, LG_HEIGHT + 1, HALEHOUND_CYAN);    // Y axis
+    tft.drawFastHLine(WF_X, AXIS_Y, WF_WIDTH, HALEHOUND_MAGENTA);            // X axis
+    tft.drawFastVLine(WF_X - 1, LG_Y, LG_HEIGHT + 1, HALEHOUND_MAGENTA);    // Y axis
 
     // Frequency labels below X axis
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setTextSize(1);
     tft.setCursor(WF_X, LABEL_Y);
     tft.print("300");
@@ -3094,7 +3094,7 @@ static void drawStatusArea() {
         }
     }
 
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setTextSize(1);
     tft.setCursor(5, STATUS_Y + 2);
     tft.printf("Peak: %.1f MHz  Lv:%d", frequencyListMHz[peakIdx], peakVal);

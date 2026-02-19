@@ -242,9 +242,9 @@ static void drawFileSelectScreen() {
     drawStatusBar();
 
     // Icon bar - back only
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
     // Glitch title
@@ -252,7 +252,7 @@ static void drawFileSelectScreen() {
 
     // SD status line
     tft.setTextSize(1);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     char statusBuf[32];
     snprintf(statusBuf, sizeof(statusBuf), "SD: %d file%s found",
              binFileCount, binFileCount == 1 ? "" : "s");
@@ -333,7 +333,7 @@ static void drawConfirmScreen() {
     drawStatusBar();
 
     // Icon bar
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
@@ -414,7 +414,7 @@ static void drawProgressScreen(const char* fileName) {
     drawStatusBar();
 
     // Icon bar (no back - can't cancel mid-flash)
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
@@ -428,11 +428,11 @@ static void drawProgressScreen(const char* fileName) {
     tft.print(fileName);
 
     // Progress bar outline
-    tft.drawRect(19, 115, 202, 22, HALEHOUND_CYAN);
+    tft.drawRect(19, 115, 202, 22, HALEHOUND_MAGENTA);
 
     // Percentage
     tft.setTextSize(2);
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(100, 145);
     tft.print("0%");
 
@@ -456,7 +456,7 @@ static void updateProgressBar(int pct) {
     // Percentage text
     tft.fillRect(88, 145, 64, 16, TFT_BLACK);
     tft.setTextSize(2);
-    tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     char buf[8];
     snprintf(buf, sizeof(buf), "%d%%", pct);
     int tw = strlen(buf) * 12;
@@ -539,7 +539,7 @@ static void drawSuccessScreen() {
     tft.fillScreen(TFT_BLACK);
     drawStatusBar();
 
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
@@ -571,9 +571,9 @@ static void drawErrorScreen(const char* msg) {
     drawStatusBar();
 
     // Icon bar with back
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
     drawGlitchTitle(48, "ERROR");
@@ -627,9 +627,9 @@ static void drawNoSDScreen() {
     tft.fillScreen(TFT_BLACK);
     drawStatusBar();
 
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
     drawGlitchTitle(48, "UPDATE FW");
@@ -648,9 +648,9 @@ static void drawNoFilesScreen() {
     tft.fillScreen(TFT_BLACK);
     drawStatusBar();
 
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
     drawGlitchTitle(48, "UPDATE FW");

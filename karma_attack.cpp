@@ -83,9 +83,9 @@ static int scrollOffset = 0;
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void drawKAIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
 
@@ -312,7 +312,7 @@ static void updateCollectDisplay() {
 
     // Stats values
     tft.fillRect(50, 64, 45, 10, HALEHOUND_BLACK);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(50, 64);
     tft.print(totalProbes);
 
@@ -326,7 +326,7 @@ static void updateCollectDisplay() {
 
     // Channel indicator
     tft.fillRect(200, 300, 40, 10, HALEHOUND_BLACK);
-    tft.setTextColor(blinkState ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL);
+    tft.setTextColor(blinkState ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
     tft.setCursor(200, 300);
     tft.printf("CH:%d", hopChannels[currentHopIndex]);
 
@@ -346,7 +346,7 @@ static void updateCollectDisplay() {
         bool recent = (millis() - entry.lastSeen) < 3000;
 
         // SSID name
-        tft.setTextColor(recent ? HALEHOUND_CYAN : HALEHOUND_VIOLET);
+        tft.setTextColor(recent ? HALEHOUND_MAGENTA : HALEHOUND_VIOLET);
         tft.setCursor(10, y);
         char truncSSID[22];
         strncpy(truncSSID, entry.ssid, 21);
@@ -406,7 +406,7 @@ static void drawAttackScreen() {
     tft.setTextColor(HALEHOUND_HOTPINK);
     tft.setCursor(10, 68);
     tft.print("TARGET:");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(60, 68);
     tft.print(ssidPool[selectedSSID].ssid);
 
@@ -417,7 +417,7 @@ static void drawAttackScreen() {
     tft.setCursor(10, 90);
     tft.print("Spawning rogue AP...");
 
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(10, 110);
     tft.print("AP SSID: ");
     tft.print(ssidPool[selectedSSID].ssid);

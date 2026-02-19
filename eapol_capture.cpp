@@ -148,9 +148,9 @@ static void wifiFullDeinit() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void drawECIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
 
@@ -669,7 +669,7 @@ static void drawScanScreen() {
     tft.drawLine(0, 58, SCREEN_WIDTH, 58, HALEHOUND_HOTPINK);
 
     tft.setTextSize(1);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(10, 65);
     tft.print("Scanning for targets...");
 }
@@ -731,7 +731,7 @@ static void drawAPList() {
         // Only show WPA2+ (skip open/WEP — no EAPOL)
         bool hasEAPOL = (apList[i].authMode >= WIFI_AUTH_WPA_PSK);
 
-        tft.setTextColor(hasEAPOL ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL);
+        tft.setTextColor(hasEAPOL ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
         tft.setCursor(10, y);
 
         // Truncate SSID to fit
@@ -814,13 +814,13 @@ static void drawCaptureScreen() {
     tft.setTextColor(HALEHOUND_HOTPINK);
     tft.setCursor(10, 67);
     tft.print("CH:");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.printf("%d", apList[selectedAP].channel);
 
     tft.setTextColor(HALEHOUND_HOTPINK);
     tft.setCursor(55, 67);
     tft.print("BSSID:");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.printf("%02X:%02X:%02X:%02X:%02X:%02X",
                apList[selectedAP].bssid[0], apList[selectedAP].bssid[1],
                apList[selectedAP].bssid[2], apList[selectedAP].bssid[3],
@@ -829,7 +829,7 @@ static void drawCaptureScreen() {
     tft.setTextColor(HALEHOUND_HOTPINK);
     tft.setCursor(10, 80);
     tft.print("RSSI:");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.printf("%d", apList[selectedAP].rssi);
 
     // Section labels
@@ -878,10 +878,10 @@ static void updateCaptureDisplay() {
     tft.fillRect(85, 97, 150, 16, HALEHOUND_BLACK);
 
     int mx = 85;
-    uint16_t m1c = hasMsg1 ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL;
-    uint16_t m2c = hasMsg2 ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL;
-    uint16_t m3c = hasMsg3 ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL;
-    uint16_t m4c = hasMsg4 ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL;
+    uint16_t m1c = hasMsg1 ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL;
+    uint16_t m2c = hasMsg2 ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL;
+    uint16_t m3c = hasMsg3 ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL;
+    uint16_t m4c = hasMsg4 ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL;
 
     tft.drawRect(mx, 98, 30, 14, m1c);
     tft.setTextColor(m1c);
@@ -922,7 +922,7 @@ static void updateCaptureDisplay() {
             tft.setTextColor(HALEHOUND_MAGENTA);
             tft.print("FOUND!");
         } else {
-            tft.setTextColor(HALEHOUND_CYAN);
+            tft.setTextColor(HALEHOUND_MAGENTA);
             tft.print("FOUND!");
         }
         // Show first 8 bytes
@@ -939,7 +939,7 @@ static void updateCaptureDisplay() {
     // ── Stats ──
     tft.fillRect(65, 153, 170, 40, HALEHOUND_BLACK);
 
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(65, 156);
     tft.print(packetCount);
 
@@ -956,19 +956,19 @@ static void updateCaptureDisplay() {
 
     if (hasPMKID && hasHandshake) {
         tft.setCursor(10, 220);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         tft.print("PMKID + Handshake captured!");
         tft.setCursor(10, 234);
         tft.print("Tap SAVE for hashcat file");
     } else if (hasPMKID) {
         tft.setCursor(10, 220);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         tft.print("PMKID captured!");
         tft.setCursor(10, 234);
         tft.print("Tap SAVE or wait for handshake");
     } else if (hasHandshake) {
         tft.setCursor(10, 220);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         tft.print("Handshake captured!");
         tft.setCursor(10, 234);
         tft.print("Tap SAVE for hashcat file");
@@ -1010,10 +1010,10 @@ static void updateCaptureDisplay() {
 
     // ── Update Save button color if we have captures ──
     if ((hasPMKID || hasHandshake) && !savedPMKID && !savedHandshake) {
-        tft.drawRoundRect(EC_SAVE_X, EC_SAVE_Y, EC_SAVE_W, EC_SAVE_H, 6, HALEHOUND_CYAN);
-        tft.drawRoundRect(EC_SAVE_X + 1, EC_SAVE_Y + 1, EC_SAVE_W - 2, EC_SAVE_H - 2, 5, HALEHOUND_CYAN);
-        tft.drawBitmap(EC_SAVE_X + 8, EC_SAVE_Y + 8, bitmap_icon_sdcard, 16, 16, HALEHOUND_CYAN);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.drawRoundRect(EC_SAVE_X, EC_SAVE_Y, EC_SAVE_W, EC_SAVE_H, 6, HALEHOUND_MAGENTA);
+        tft.drawRoundRect(EC_SAVE_X + 1, EC_SAVE_Y + 1, EC_SAVE_W - 2, EC_SAVE_H - 2, 5, HALEHOUND_MAGENTA);
+        tft.drawBitmap(EC_SAVE_X + 8, EC_SAVE_Y + 8, bitmap_icon_sdcard, 16, 16, HALEHOUND_MAGENTA);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         tft.setCursor(EC_SAVE_X + 30, EC_SAVE_Y + 12);
         tft.print("SAVE");
     } else if (savedPMKID || savedHandshake) {
@@ -1174,7 +1174,7 @@ void loop() {
             saveCaptures();
             // Flash save button — save icon on cyan
             tft.fillRoundRect(EC_SAVE_X + 2, EC_SAVE_Y + 2,
-                              EC_SAVE_W - 4, EC_SAVE_H - 4, 4, HALEHOUND_CYAN);
+                              EC_SAVE_W - 4, EC_SAVE_H - 4, 4, HALEHOUND_MAGENTA);
             tft.drawBitmap(EC_SAVE_X + 8, EC_SAVE_Y + 8, bitmap_icon_save, 16, 16, HALEHOUND_BLACK);
             tft.setTextColor(HALEHOUND_BLACK);
             tft.setCursor(EC_SAVE_X + 30, EC_SAVE_Y + 12);
@@ -1187,10 +1187,10 @@ void loop() {
             // Redraw save button back to normal — SD card icon
             tft.fillRoundRect(EC_SAVE_X + 2, EC_SAVE_Y + 2,
                               EC_SAVE_W - 4, EC_SAVE_H - 4, 4, HALEHOUND_BLACK);
-            tft.drawRoundRect(EC_SAVE_X, EC_SAVE_Y, EC_SAVE_W, EC_SAVE_H, 6, HALEHOUND_CYAN);
-            tft.drawRoundRect(EC_SAVE_X + 1, EC_SAVE_Y + 1, EC_SAVE_W - 2, EC_SAVE_H - 2, 5, HALEHOUND_CYAN);
-            tft.drawBitmap(EC_SAVE_X + 8, EC_SAVE_Y + 8, bitmap_icon_sdcard, 16, 16, HALEHOUND_CYAN);
-            tft.setTextColor(HALEHOUND_CYAN);
+            tft.drawRoundRect(EC_SAVE_X, EC_SAVE_Y, EC_SAVE_W, EC_SAVE_H, 6, HALEHOUND_MAGENTA);
+            tft.drawRoundRect(EC_SAVE_X + 1, EC_SAVE_Y + 1, EC_SAVE_W - 2, EC_SAVE_H - 2, 5, HALEHOUND_MAGENTA);
+            tft.drawBitmap(EC_SAVE_X + 8, EC_SAVE_Y + 8, bitmap_icon_sdcard, 16, 16, HALEHOUND_MAGENTA);
+            tft.setTextColor(HALEHOUND_MAGENTA);
             tft.setCursor(EC_SAVE_X + 30, EC_SAVE_Y + 12);
             tft.print("SAVE");
         }
@@ -1239,10 +1239,10 @@ void loop() {
             // Redraw save button normal — SD card icon
             tft.fillRoundRect(EC_SAVE_X + 2, EC_SAVE_Y + 2,
                               EC_SAVE_W - 4, EC_SAVE_H - 4, 4, HALEHOUND_BLACK);
-            tft.drawRoundRect(EC_SAVE_X, EC_SAVE_Y, EC_SAVE_W, EC_SAVE_H, 6, HALEHOUND_CYAN);
-            tft.drawRoundRect(EC_SAVE_X + 1, EC_SAVE_Y + 1, EC_SAVE_W - 2, EC_SAVE_H - 2, 5, HALEHOUND_CYAN);
-            tft.drawBitmap(EC_SAVE_X + 8, EC_SAVE_Y + 8, bitmap_icon_sdcard, 16, 16, HALEHOUND_CYAN);
-            tft.setTextColor(HALEHOUND_CYAN);
+            tft.drawRoundRect(EC_SAVE_X, EC_SAVE_Y, EC_SAVE_W, EC_SAVE_H, 6, HALEHOUND_MAGENTA);
+            tft.drawRoundRect(EC_SAVE_X + 1, EC_SAVE_Y + 1, EC_SAVE_W - 2, EC_SAVE_H - 2, 5, HALEHOUND_MAGENTA);
+            tft.drawBitmap(EC_SAVE_X + 8, EC_SAVE_Y + 8, bitmap_icon_sdcard, 16, 16, HALEHOUND_MAGENTA);
+            tft.setTextColor(HALEHOUND_MAGENTA);
             tft.setCursor(EC_SAVE_X + 30, EC_SAVE_Y + 12);
             tft.print("SAVE");
 

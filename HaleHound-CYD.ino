@@ -284,9 +284,9 @@ const int Y_SPACING = 75;
 
 // Draw simple icon bar with back icon - MATCHES ORIGINAL HALEHOUND
 void drawInoIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, INO_ICON_SIZE, INO_ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, INO_ICON_SIZE, INO_ICON_SIZE, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
 
@@ -374,8 +374,8 @@ void displaySubmenu() {
             int yPos = 30 + i * 30;
             if (i == active_submenu_size - 1) yPos += 10;
 
-            tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
-            tft.drawBitmap(10, yPos, active_submenu_icons[i], 16, 16, HALEHOUND_CYAN);
+            tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
+            tft.drawBitmap(10, yPos, active_submenu_icons[i], 16, 16, HALEHOUND_MAGENTA);
             tft.setCursor(30, yPos);
             if (i < active_submenu_size - 1) {
                 tft.print("| ");
@@ -394,8 +394,8 @@ void displaySubmenu() {
             int prev_yPos = 30 + last_submenu_index * 30;
             if (last_submenu_index == active_submenu_size - 1) prev_yPos += 10;
 
-            tft.setTextColor(HALEHOUND_CYAN, TFT_BLACK);
-            tft.drawBitmap(10, prev_yPos, active_submenu_icons[last_submenu_index], 16, 16, HALEHOUND_CYAN);
+            tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
+            tft.drawBitmap(10, prev_yPos, active_submenu_icons[last_submenu_index], 16, 16, HALEHOUND_MAGENTA);
             tft.setCursor(30, prev_yPos);
             if (last_submenu_index < active_submenu_size - 1) {
                 tft.print("| ");
@@ -407,8 +407,8 @@ void displaySubmenu() {
         int new_yPos = 30 + current_submenu_index * 30;
         if (current_submenu_index == active_submenu_size - 1) new_yPos += 10;
 
-        tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
-        tft.drawBitmap(10, new_yPos, active_submenu_icons[current_submenu_index], 16, 16, HALEHOUND_MAGENTA);
+        tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+        tft.drawBitmap(10, new_yPos, active_submenu_icons[current_submenu_index], 16, 16, HALEHOUND_HOTPINK);
         tft.setCursor(30, new_yPos);
         if (current_submenu_index < active_submenu_size - 1) {
             tft.print("| ");
@@ -445,9 +445,9 @@ void displayMenu() {
             int y_position = Y_START + row * Y_SPACING;
 
             // Button - icon and text only, no border
-            tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[i], 16, 16, HALEHOUND_CYAN);
+            tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[i], 16, 16, HALEHOUND_MAGENTA);
 
-            tft.setTextColor(HALEHOUND_CYAN);
+            tft.setTextColor(HALEHOUND_MAGENTA);
             int textWidth = 6 * strlen(menu_items[i]);
             int textX = x_position + (100 - textWidth) / 2;
             int textY = y_position + 30;
@@ -469,8 +469,8 @@ void displayMenu() {
             if (i == last_menu_index) {
                 // Deselected - redraw icon in cyan (no border)
                 tft.fillRoundRect(x_position, y_position, 100, 60, 5, TFT_BLACK);
-                tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[last_menu_index], 16, 16, HALEHOUND_CYAN);
-                tft.setTextColor(HALEHOUND_CYAN);
+                tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[last_menu_index], 16, 16, HALEHOUND_MAGENTA);
+                tft.setTextColor(HALEHOUND_MAGENTA);
                 int textWidth = 6 * strlen(menu_items[last_menu_index]);
                 int textX = x_position + (100 - textWidth) / 2;
                 int textY = y_position + 30;
@@ -485,9 +485,9 @@ void displayMenu() {
         int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
         int y_position = Y_START + row * Y_SPACING;
 
-        // Selected button - magenta icon and text (no border)
-        tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[current_menu_index], 16, 16, HALEHOUND_MAGENTA);
-        tft.setTextColor(HALEHOUND_MAGENTA);
+        // Selected button - hot pink icon and text (no border)
+        tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[current_menu_index], 16, 16, HALEHOUND_HOTPINK);
+        tft.setTextColor(HALEHOUND_HOTPINK);
         int textWidth = 6 * strlen(menu_items[current_menu_index]);
         int textX = x_position + (100 - textWidth) / 2;
         int textY = y_position + 30;
@@ -980,7 +980,7 @@ void showSigintPlaceholder(const char* title) {
     drawInoIconBar();
     drawGlitchTitle(75, title);
     drawGlitchStatus(110, "BUILDING...", HALEHOUND_HOTPINK);
-    drawCenteredText(150, "Module under construction", HALEHOUND_CYAN, 1);
+    drawCenteredText(150, "Module under construction", HALEHOUND_MAGENTA, 1);
 
     while (true) {
         touchButtonsUpdate();
@@ -1131,12 +1131,12 @@ void displayBrightnessControl() {
     drawGlitchTitle(75, "BRIGHTNESS");
 
     // Draw brightness bar
-    tft.drawRect(30, 90, 180, 30, HALEHOUND_CYAN);
+    tft.drawRect(30, 90, 180, 30, HALEHOUND_MAGENTA);
     int bar_width = map(brightness_level, 0, 255, 0, 176);
     tft.fillRect(32, 92, bar_width, 26, HALEHOUND_MAGENTA);
 
     // Show percentage
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setTextSize(2);
     int percent = map(brightness_level, 0, 255, 0, 100);
     tft.setCursor(90, 135);
@@ -1145,12 +1145,12 @@ void displayBrightnessControl() {
     // Touch zones
     tft.setTextSize(1);
     tft.fillRect(30, 180, 80, 40, HALEHOUND_DARK);
-    tft.drawRect(30, 180, 80, 40, HALEHOUND_CYAN);
+    tft.drawRect(30, 180, 80, 40, HALEHOUND_MAGENTA);
     tft.setCursor(50, 195);
     tft.print("DARKER");
 
     tft.fillRect(130, 180, 80, 40, HALEHOUND_DARK);
-    tft.drawRect(130, 180, 80, 40, HALEHOUND_CYAN);
+    tft.drawRect(130, 180, 80, 40, HALEHOUND_MAGENTA);
     tft.setCursor(145, 195);
     tft.print("BRIGHTER");
 }
@@ -1207,7 +1207,7 @@ void displayTimeoutControl() {
 
     // Current value display
     int idx = getTimeoutOptionIndex();
-    tft.drawRoundRect(30, 95, 180, 40, 6, HALEHOUND_CYAN);
+    tft.drawRoundRect(30, 95, 180, 40, 6, HALEHOUND_MAGENTA);
     tft.setTextSize(2);
     tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
     int tw = strlen(timeoutLabels[idx]) * 12;
@@ -1224,15 +1224,15 @@ void displayTimeoutControl() {
 
     // Left / Right buttons
     tft.fillRect(30, 160, 80, 40, HALEHOUND_DARK);
-    tft.drawRect(30, 160, 80, 40, HALEHOUND_CYAN);
+    tft.drawRect(30, 160, 80, 40, HALEHOUND_MAGENTA);
     tft.setTextSize(1);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(50, 175);
     tft.print("SHORTER");
 
     tft.fillRect(130, 160, 80, 40, HALEHOUND_DARK);
-    tft.drawRect(130, 160, 80, 40, HALEHOUND_CYAN);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.drawRect(130, 160, 80, 40, HALEHOUND_MAGENTA);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(148, 175);
     tft.print("LONGER");
 
@@ -1298,7 +1298,7 @@ void displayColorSwap() {
     drawGlitchTitle(60, "COLORS");
 
     // Current mode display
-    tft.drawRoundRect(20, 95, 200, 50, 6, HALEHOUND_CYAN);
+    tft.drawRoundRect(20, 95, 200, 50, 6, HALEHOUND_MAGENTA);
     tft.setTextSize(2);
     tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
     if (color_order_rgb) {
@@ -1321,9 +1321,9 @@ void displayColorSwap() {
 
     // Swap button
     tft.fillRect(50, 225, 140, 45, HALEHOUND_DARK);
-    tft.drawRect(50, 225, 140, 45, HALEHOUND_CYAN);
+    tft.drawRect(50, 225, 140, 45, HALEHOUND_MAGENTA);
     tft.setTextSize(2);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(82, 238);
     tft.print("SWAP");
 }
@@ -1365,7 +1365,7 @@ void displayInvertScreen() {
     drawGlitchTitle(60, "INVERT");
 
     // Current mode display
-    tft.drawRoundRect(20, 95, 200, 50, 6, HALEHOUND_CYAN);
+    tft.drawRoundRect(20, 95, 200, 50, 6, HALEHOUND_MAGENTA);
     tft.setTextSize(2);
     tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
     if (display_inverted) {
@@ -1388,9 +1388,9 @@ void displayInvertScreen() {
 
     // Toggle button
     tft.fillRect(50, 225, 140, 45, HALEHOUND_DARK);
-    tft.drawRect(50, 225, 140, 45, HALEHOUND_CYAN);
+    tft.drawRect(50, 225, 140, 45, HALEHOUND_MAGENTA);
     tft.setTextSize(2);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(65, 238);
     tft.print("TOGGLE");
 }
@@ -1433,7 +1433,7 @@ void colorModeScreen() {
     drawGlitchTitle(60, "COLORS");
 
     // Current mode name in rounded rect
-    tft.drawRoundRect(20, 95, 200, 50, 6, HALEHOUND_CYAN);
+    tft.drawRoundRect(20, 95, 200, 50, 6, HALEHOUND_MAGENTA);
     tft.setTextSize(2);
     tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
     const char* modeNames[] = {"DEFAULT", "COLORBLIND", "HI-CONTRAST"};
@@ -1449,7 +1449,7 @@ void colorModeScreen() {
     int swatchY = 155;
     int swatchStartX = 10;
     uint16_t swatches[] = {HALEHOUND_MAGENTA, HALEHOUND_HOTPINK, HALEHOUND_BRIGHT,
-                           HALEHOUND_VIOLET, HALEHOUND_CYAN, HALEHOUND_GREEN};
+                           HALEHOUND_VIOLET, HALEHOUND_MAGENTA, HALEHOUND_GREEN};
     for (int i = 0; i < 6; i++) {
         int sx = swatchStartX + i * (swatchW + 7);
         tft.fillRect(sx, swatchY, swatchW, swatchH, swatches[i]);
@@ -1466,9 +1466,9 @@ void colorModeScreen() {
 
     // NEXT button
     tft.fillRect(50, 225, 140, 45, HALEHOUND_DARK);
-    tft.drawRect(50, 225, 140, 45, HALEHOUND_CYAN);
+    tft.drawRect(50, 225, 140, 45, HALEHOUND_MAGENTA);
     tft.setTextSize(2);
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(80, 238);
     tft.print("NEXT");
 }
@@ -1508,9 +1508,9 @@ void displayRotationScreen() {
 
     tft.fillScreen(TFT_BLACK);
     tft.drawRect(2, 2, sw - 4, sh - 4, HALEHOUND_HOTPINK);
-    tft.drawLine(0, 19, sw, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, sw, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, sw, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, sw, 36, HALEHOUND_HOTPINK);
 
     drawGlitchTitle(48, "ROTATION");
@@ -1520,7 +1520,7 @@ void displayRotationScreen() {
     tft.setTextColor(TFT_WHITE);
     tft.setCursor(15, 72);
     tft.print("Current: ");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     const char* rotNames[] = {"Standard", "Landscape CW", "Flipped 180", "Landscape CCW"};
     tft.print(rotNames[screen_rotation]);
 
@@ -1535,7 +1535,7 @@ void displayRotationScreen() {
 
     for (int i = 0; i < 4; i++) {
         int y = startY + i * (boxH + gap);
-        uint16_t col = (screen_rotation == rotVals[i]) ? HALEHOUND_MAGENTA : HALEHOUND_CYAN;
+        uint16_t col = (screen_rotation == rotVals[i]) ? HALEHOUND_HOTPINK : HALEHOUND_MAGENTA;
         tft.drawRect(20, y, boxW, boxH, col);
         tft.setTextColor(col);
         tft.setTextSize(2);
@@ -1619,9 +1619,9 @@ void drawEggBackground() {
     tft.drawBitmap(0, 0, skull_bg_bitmap, SKULL_BG_WIDTH, SKULL_BG_HEIGHT, 0xA800);
     tft.drawRect(2, 2, SCREEN_WIDTH - 4, SCREEN_HEIGHT - 4, HALEHOUND_HOTPINK);
     tft.drawRect(4, 4, SCREEN_WIDTH - 8, SCREEN_HEIGHT - 8, HALEHOUND_VIOLET);
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
 
@@ -1639,7 +1639,7 @@ void showEasterEggPage1() {
     y += 18;
 
     // Timeline
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(10, y); tft.print("Jan 3:  I submitted PR #76");
     y += 13;
     tft.setCursor(10, y); tft.print("        my +296 lines of FENRIR");
@@ -1741,30 +1741,30 @@ void showEasterEggPage2() {
 
     tft.setTextColor(TFT_WHITE);
     tft.setCursor(10, y); tft.print("GDO0/GDO2 TX/RX SWAPPED");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(170, y); tft.print("FIXED");
     y += 12;
 
     tft.setTextColor(TFT_WHITE);
     tft.setCursor(10, y); tft.print("NRF24 pin conflict");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(170, y); tft.print("FIXED");
     y += 12;
 
     tft.setTextColor(TFT_WHITE);
     tft.setCursor(10, y); tft.print("V2 pin mappings figured out");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(170, y); tft.print("FIXED");
     y += 12;
 
     tft.setTextColor(TFT_WHITE);
     tft.setCursor(10, y); tft.print("SCREEN_HEIGHT 64->320");
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(170, y); tft.print("FIXED");
     y += 18;
 
     // The verdict
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(10, y); tft.print("Attribution given:");
     tft.setTextColor(TFT_WHITE);
     tft.setCursor(130, y); tft.print("ZERO. NONE.");
@@ -1816,7 +1816,7 @@ void displayDeviceInfo() {
 
     drawGlitchTitle(70, "DEV INFO");
 
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setTextSize(1);
     int y = 75;
 
@@ -1871,7 +1871,7 @@ void displayDeviceInfo() {
                 drawInoIconBar();
                 drawGlitchTitle(70, "DEV INFO");
 
-                tft.setTextColor(HALEHOUND_CYAN);
+                tft.setTextColor(HALEHOUND_MAGENTA);
                 tft.setTextSize(1);
                 y = 75;
                 tft.setCursor(10, y); tft.print("Device: HaleHound-CYD");
@@ -1974,16 +1974,16 @@ void handleAboutPage() {
     tft.drawRect(4, 4, SCREEN_WIDTH - 8, SCREEN_HEIGHT - 8, HALEHOUND_MAGENTA);
 
     // Icon bar with back button
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
     // Glitch title — chromatic aberration effect
     drawGlitchTitle(58, "HALEHOUND");
 
     // Subtitle
-    drawGlitchStatus(80, "CYD Edition", HALEHOUND_CYAN);
+    drawGlitchStatus(80, "CYD Edition", HALEHOUND_MAGENTA);
 
     // Version centered
     drawCenteredText(90, "v2.6.2", HALEHOUND_VIOLET, 1);
@@ -2003,7 +2003,7 @@ void handleAboutPage() {
     int col2 = 125;
     int rowH = 13;
 
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
 
     tft.setCursor(col1, my); tft.print("> WiFi");
     tft.setCursor(col2, my); tft.print("> Bluetooth");
@@ -2029,7 +2029,7 @@ void handleAboutPage() {
     my += 14;
 
     // Live hardware stats
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(col1, my);
     tft.printf("Heap: %d bytes", ESP.getFreeHeap());
     my += 12;
@@ -2045,7 +2045,7 @@ void handleAboutPage() {
     my += 10;
 
     // Author — this is my firmware
-    drawCenteredText(my, "By: JMFH (HaleHound)", HALEHOUND_CYAN, 1);
+    drawCenteredText(my, "By: JMFH (HaleHound)", HALEHOUND_MAGENTA, 1);
     my += 14;
     drawCenteredText(my, "github.com/JesseCHale", HALEHOUND_VIOLET, 1);
 
@@ -2152,7 +2152,7 @@ void showSplash() {
     drawGlitchTitle(80, "HALEHOUND");
 
     // Subtitle
-    drawGlitchStatus(110, "CYD Edition", HALEHOUND_CYAN);
+    drawGlitchStatus(110, "CYD Edition", HALEHOUND_MAGENTA);
 
     // Version
     tft.setTextSize(1);

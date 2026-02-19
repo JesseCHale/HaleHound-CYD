@@ -238,7 +238,7 @@ static void drawBaudSelector() {
     tft.fillRect(20, 85, 200, 40, TFT_BLACK);
 
     // Rounded rect border
-    tft.drawRoundRect(20, 85, 200, 40, 6, HALEHOUND_CYAN);
+    tft.drawRoundRect(20, 85, 200, 40, 6, HALEHOUND_MAGENTA);
 
     // Baud rate value centered
     char buf[16];
@@ -317,9 +317,9 @@ static void drawConfigScreen() {
     drawStatusBar();
 
     // Icon bar - back only
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 
     // Glitch title
@@ -400,13 +400,13 @@ static int handleConfigTouch() {
 // =============================================================================
 
 static void drawTermIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
 
     // Icons: back | pause | clear
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
-    tft.drawBitmap(40, 20, monPaused ? bitmap_icon_eye2 : bitmap_icon_eye, ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
-    tft.drawBitmap(70, 20, bitmap_icon_recycle, ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
+    tft.drawBitmap(40, 20, monPaused ? bitmap_icon_eye2 : bitmap_icon_eye, ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
+    tft.drawBitmap(70, 20, bitmap_icon_recycle, ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
 
     // Baud rate text label
     char buf[16];
@@ -558,7 +558,7 @@ void serialMonitorScreen() {
             // Update pause icon
             tft.fillRect(40, 20, ICON_SIZE, ICON_SIZE, HALEHOUND_DARK);
             tft.drawBitmap(40, 20, monPaused ? bitmap_icon_eye2 : bitmap_icon_eye,
-                           ICON_SIZE, ICON_SIZE, HALEHOUND_CYAN);
+                           ICON_SIZE, ICON_SIZE, HALEHOUND_MAGENTA);
             if (!monPaused) {
                 // Resuming - redraw terminal to show lines buffered while paused
                 redrawTerminal();

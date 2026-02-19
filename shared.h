@@ -33,10 +33,10 @@ const uint16_t HALEHOUND_GUNMETAL = 0x18E3; // #1C1C1C - Gunmetal gray
 // Macros so they follow theme color changes at runtime
 // ═══════════════════════════════════════════════════════════════════════════
 
-#define SHREDDY_TEAL    HALEHOUND_CYAN
+#define SHREDDY_TEAL    HALEHOUND_MAGENTA
 #define SHREDDY_PINK    HALEHOUND_MAGENTA
 #define SHREDDY_BLACK   HALEHOUND_BLACK
-#define SHREDDY_BLUE    HALEHOUND_CYAN
+#define SHREDDY_BLUE    HALEHOUND_MAGENTA
 #define SHREDDY_PURPLE  HALEHOUND_VIOLET
 #define SHREDDY_GREEN   HALEHOUND_GREEN
 #define SHREDDY_GUNMETAL HALEHOUND_GUNMETAL
@@ -44,7 +44,7 @@ const uint16_t HALEHOUND_GUNMETAL = 0x18E3; // #1C1C1C - Gunmetal gray
 // Standard colors
 #define ORANGE          HALEHOUND_MAGENTA
 const uint16_t GRAY = 0x8410;
-#define BLUE            HALEHOUND_CYAN
+#define BLUE            HALEHOUND_MAGENTA
 const uint16_t RED = 0xF800;
 #define GREEN           HALEHOUND_GREEN
 const uint16_t BLACK = 0x0000;
@@ -54,7 +54,7 @@ const uint16_t DARK_GRAY = HALEHOUND_GUNMETAL;
 
 // TFT color defines
 #define TFT_DARKBLUE  0x3166
-#define TFT_LIGHTBLUE HALEHOUND_CYAN
+#define TFT_LIGHTBLUE HALEHOUND_MAGENTA
 #define TFTWHITE     0xFFFF
 #define TFT_GRAY      0x8410
 #define SELECTED_ICON_COLOR HALEHOUND_MAGENTA

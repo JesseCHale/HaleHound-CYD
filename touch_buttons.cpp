@@ -293,7 +293,7 @@ int getTouchedMenuItem(int startY, int itemHeight, int itemCount) {
 
 // Draw visible BACK button - bitmap icon at x=10 like original ESP32-DIV
 void drawBackButton() {
-    tft.drawBitmap(BACK_ICON_X, BACK_ICON_Y, bitmap_icon_go_back, BACK_ICON_SIZE, BACK_ICON_SIZE, HALEHOUND_CYAN);
+    tft.drawBitmap(BACK_ICON_X, BACK_ICON_Y, bitmap_icon_go_back, BACK_ICON_SIZE, BACK_ICON_SIZE, HALEHOUND_MAGENTA);
 }
 
 // Check if BACK button tapped - checks icon area x=10-26, y=20-36

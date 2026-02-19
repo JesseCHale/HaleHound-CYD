@@ -61,9 +61,9 @@ static uint32_t wdScanCount = 0;
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void drawWDIconBar() {
-    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_CYAN);
+    tft.drawLine(0, 19, SCREEN_WIDTH, 19, HALEHOUND_MAGENTA);
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
-    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_CYAN);
+    tft.drawBitmap(10, 20, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
 }
 
@@ -98,10 +98,10 @@ static void drawStartStopButton(bool active) {
         tft.setFreeFont(NULL);
     } else {
         // START button — cyan border, cyan text
-        tft.drawRoundRect(WD_BTN_X, WD_BTN_Y, WD_BTN_W, WD_BTN_H, 8, HALEHOUND_CYAN);
-        tft.drawRoundRect(WD_BTN_X + 1, WD_BTN_Y + 1, WD_BTN_W - 2, WD_BTN_H - 2, 7, HALEHOUND_CYAN);
+        tft.drawRoundRect(WD_BTN_X, WD_BTN_Y, WD_BTN_W, WD_BTN_H, 8, HALEHOUND_MAGENTA);
+        tft.drawRoundRect(WD_BTN_X + 1, WD_BTN_Y + 1, WD_BTN_W - 2, WD_BTN_H - 2, 7, HALEHOUND_MAGENTA);
         tft.setFreeFont(&Nosifer_Regular10pt7b);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         int16_t tw = tft.textWidth("START");
         tft.setCursor(WD_BTN_X + (WD_BTN_W - tw) / 2, WD_BTN_Y + 28);
         tft.print("START");
@@ -193,7 +193,7 @@ static void updateWDValues() {
     if (stats.active) {
         // Big network count in frame — centered, Nosifer
         tft.setFreeFont(&Nosifer_Regular12pt7b);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         snprintf(buf, sizeof(buf), "%lu", (unsigned long)stats.newNetworks);
         int16_t tw = tft.textWidth(buf);
         tft.setCursor(WD_FRAME_X + (WD_FRAME_W - tw) / 2, WD_FRAME_Y + 38);
@@ -210,7 +210,7 @@ static void updateWDValues() {
     // NETWORKS value
     tft.setTextSize(1);
     tft.fillRect(65, WD_STATS_Y, 55, 10, HALEHOUND_BLACK);
-    tft.setTextColor(stats.active ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL);
+    tft.setTextColor(stats.active ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
     tft.setCursor(65, WD_STATS_Y);
     tft.print(stats.newNetworks);
 
@@ -249,7 +249,7 @@ static void updateWDValues() {
     tft.fillRect(30, WD_GPS_Y, 85, 10, HALEHOUND_BLACK);
     tft.setCursor(30, WD_GPS_Y);
     if (gpsData.valid) {
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         tft.print("FIX OK");
     } else {
         tft.setTextColor(HALEHOUND_HOTPINK);
@@ -258,7 +258,7 @@ static void updateWDValues() {
 
     // SATS value
     tft.fillRect(160, WD_GPS_Y, 50, 10, HALEHOUND_BLACK);
-    tft.setTextColor(gpsData.satellites > 0 ? HALEHOUND_CYAN : HALEHOUND_GUNMETAL);
+    tft.setTextColor(gpsData.satellites > 0 ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
     tft.setCursor(160, WD_GPS_Y);
     tft.print(gpsData.satellites);
 
@@ -266,7 +266,7 @@ static void updateWDValues() {
     tft.fillRect(30, WD_GPS_Y + 18, 90, 10, HALEHOUND_BLACK);
     tft.setCursor(30, WD_GPS_Y + 18);
     if (gpsData.valid) {
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         snprintf(buf, sizeof(buf), "%.4f", gpsData.latitude);
         tft.print(buf);
     } else {
@@ -278,7 +278,7 @@ static void updateWDValues() {
     tft.fillRect(150, WD_GPS_Y + 18, 85, 10, HALEHOUND_BLACK);
     tft.setCursor(150, WD_GPS_Y + 18);
     if (gpsData.valid) {
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         snprintf(buf, sizeof(buf), "%.4f", gpsData.longitude);
         tft.print(buf);
     } else {
@@ -291,7 +291,7 @@ static void updateWDValues() {
     tft.setTextSize(1);
     tft.setCursor(10, WD_FILE_Y + 14);
     if (stats.active && stats.currentFile.length() > 0) {
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
         // Show just the filename, not full path
         int lastSlash = stats.currentFile.lastIndexOf('/');
         if (lastSlash >= 0) {

@@ -117,7 +117,7 @@ void drawMenuItem(int y, const char* text, bool selected) {
     } else {
         // Normal item
         tft.fillRect(0, y, SCREEN_WIDTH, 24, HALEHOUND_BLACK);
-        tft.setTextColor(HALEHOUND_CYAN);
+        tft.setTextColor(HALEHOUND_MAGENTA);
     }
 
     tft.setTextSize(2);
@@ -131,7 +131,7 @@ void drawProgressBar(int x, int y, int width, int height, int percent, uint16_t 
     if (percent > 100) percent = 100;
 
     // Draw border
-    tft.drawRect(x, y, width, height, HALEHOUND_CYAN);
+    tft.drawRect(x, y, width, height, HALEHOUND_MAGENTA);
 
     // Calculate fill width
     int fillWidth = ((width - 2) * percent) / 100;
@@ -172,7 +172,7 @@ void drawGlitchText(int y, const char* text, const GFXfont* font) {
     if (x < 0) x = 0;
 
     // Pass 1: ghost offset left-up
-    tft.setTextColor(HALEHOUND_CYAN);
+    tft.setTextColor(HALEHOUND_MAGENTA);
     tft.setCursor(x - 1, y - 1);
     tft.print(text);
 
