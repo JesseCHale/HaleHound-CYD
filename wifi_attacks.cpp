@@ -2222,19 +2222,14 @@ static int afCurrentPage = 0;
 static int afHighlightIdx = 0;
 static const int afPerPage = 12;
 
-// Skull spinner (8-skull row with color wave — matches Deauther style)
-static int skullFrame = 0;
-static const unsigned char* skullIcons[] = {
-    bitmap_icon_skull_wifi,
-    bitmap_icon_skull_bluetooth,
-    bitmap_icon_skull_jammer,
-    bitmap_icon_skull_subghz,
-    bitmap_icon_skull_ir,
-    bitmap_icon_skull_tools,
-    bitmap_icon_skull_setting,
-    bitmap_icon_skull_about
-};
-static const int numSkulls = 8;
+// Equalizer system — 85 bars, ProtoKill-style cyan→hotpink gradient
+#define AF_NUM_BARS      85
+#define AF_GRAPH_X       5
+#define AF_GRAPH_Y       143
+#define AF_GRAPH_WIDTH   230
+#define AF_GRAPH_HEIGHT  67
+static uint8_t afBarHeat[AF_NUM_BARS];
+static int afSweepPos = 0;
 
 // Debounce guard — prevents state transition bleed-through
 // (BTN_STATE_PRESSED persists for up to 500ms, causing double-fire)
@@ -2501,7 +2496,121 @@ static void drawActionButton(bool running) {
     tft.setTextSize(1);
 }
 
-// Attack screen — full layout: target → button → skull → stats
+// ═══════════════════════════════════════════════════════════════════════════
+// EQUALIZER — ProtoKill-style 85-bar gradient animation
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void updateAfHeat() {
+    if (!attackRunning) {
+        // Decay when not attacking
+        for (int i = 0; i < AF_NUM_BARS; i++) {
+            if (afBarHeat[i] > 0) {
+                afBarHeat[i] = afBarHeat[i] / 2;
+            }
+        }
+        return;
+    }
+
+    // Sweep position advances +3 bars per frame, wraps at 85
+    afSweepPos = (afSweepPos + 3) % AF_NUM_BARS;
+
+    for (int i = 0; i < AF_NUM_BARS; i++) {
+        int dist = abs(i - afSweepPos);
+        // Handle wrap-around distance
+        if (dist > AF_NUM_BARS / 2) dist = AF_NUM_BARS - dist;
+
+        if (i == afSweepPos) {
+            // Direct hit — max heat
+            afBarHeat[i] = 125;
+        } else if (dist <= 6) {
+            // Splash zone — gradient decay
+            int splash = 110 - (dist * 15);
+            afBarHeat[i] = (afBarHeat[i] + splash) / 2;
+        } else {
+            // Random chaos bursts (30% chance)
+            if (random(100) < 30) {
+                afBarHeat[i] = 30 + random(40);
+            } else {
+                // Decay non-active bars at 75%
+                afBarHeat[i] = (afBarHeat[i] * 3) / 4;
+            }
+        }
+    }
+}
+
+static void drawAfEqualizer() {
+    updateAfHeat();
+
+    // Clear equalizer area
+    tft.fillRect(AF_GRAPH_X, AF_GRAPH_Y, AF_GRAPH_WIDTH, AF_GRAPH_HEIGHT, HALEHOUND_BLACK);
+
+    // Frame border
+    tft.drawRect(AF_GRAPH_X - 1, AF_GRAPH_Y - 1, AF_GRAPH_WIDTH + 2, AF_GRAPH_HEIGHT + 2, HALEHOUND_MAGENTA);
+
+    int maxBarH = AF_GRAPH_HEIGHT - 10;
+
+    if (!attackRunning) {
+        // Check for remaining heat (decay animation)
+        bool hasHeat = false;
+        for (int i = 0; i < AF_NUM_BARS; i++) {
+            if (afBarHeat[i] > 3) { hasHeat = true; break; }
+        }
+
+        if (!hasHeat) {
+            // Standby — gunmetal idle bars
+            for (int i = 0; i < AF_NUM_BARS; i++) {
+                int x = AF_GRAPH_X + (i * AF_GRAPH_WIDTH / AF_NUM_BARS);
+                int barH = 4 + (i % 4) * 2;
+                int barY = AF_GRAPH_Y + AF_GRAPH_HEIGHT - barH - 6;
+                tft.drawFastVLine(x, barY, barH, HALEHOUND_GUNMETAL);
+                tft.drawFastVLine(x + 1, barY, barH, HALEHOUND_GUNMETAL);
+            }
+
+            // Standby text
+            tft.setTextColor(HALEHOUND_GUNMETAL, HALEHOUND_BLACK);
+            tft.setTextSize(1);
+            tft.setCursor(AF_GRAPH_X + 85, AF_GRAPH_Y + 28);
+            tft.print("STANDBY");
+            return;
+        }
+    }
+
+    // DRAW THE EQUALIZER — 85 bars of FIRE
+    for (int i = 0; i < AF_NUM_BARS; i++) {
+        int x = AF_GRAPH_X + (i * AF_GRAPH_WIDTH / AF_NUM_BARS);
+        uint8_t heat = afBarHeat[i];
+
+        // Bar height based on heat
+        int barH = (heat * maxBarH) / 100;
+        if (barH > maxBarH) barH = maxBarH;
+        if (barH < 4) barH = 4;
+
+        int barY = AF_GRAPH_Y + AF_GRAPH_HEIGHT - barH - 6;
+
+        // Per-pixel cyan → hotpink gradient (ProtoKill exact formula)
+        for (int y = 0; y < barH; y++) {
+            float heightRatio = (float)y / (float)barH;
+            float heatRatio = (float)heat / 125.0f;
+            float ratio = heightRatio * (0.3f + heatRatio * 0.7f);
+            if (ratio > 1.0f) ratio = 1.0f;
+
+            uint8_t r = (uint8_t)(ratio * 255);
+            uint8_t g = 207 - (uint8_t)(ratio * (207 - 28));
+            uint8_t b = 255 - (uint8_t)(ratio * (255 - 82));
+            uint16_t color = tft.color565(r, g, b);
+
+            tft.drawFastHLine(x, barY + barH - 1 - y, 2, color);
+        }
+
+        // Base glow on hot bars
+        if (heat > 80) {
+            tft.drawFastHLine(x, barY + barH, 2, HALEHOUND_HOTPINK);
+            tft.drawFastHLine(x, barY + barH + 1, 2, tft.color565(128, 14, 41));
+        }
+    }
+}
+
+// Attack screen — full layout: target → button → equalizer → stats
 static void drawAttackScreen() {
     tft.fillRect(0, 63, SCREEN_WIDTH, SCREEN_HEIGHT - 63, HALEHOUND_BLACK);
 
@@ -2534,12 +2643,10 @@ static void drawAttackScreen() {
     tft.drawLine(5, 140, SCREEN_WIDTH - 5, 140, HALEHOUND_DARK);
 
     if (!attackRunning) {
-        // Standby skull — static, gunmetal
-        int skullX = SCREEN_WIDTH / 2 - 16;
-        tft.drawBitmap(skullX, 150, skullIcons[0], 32, 32, HALEHOUND_GUNMETAL);
-
-        // Standby status
-        drawGlitchStatus(190, "STANDBY", HALEHOUND_GUNMETAL);
+        // Standby equalizer — gunmetal idle bars + STANDBY text
+        memset(afBarHeat, 0, sizeof(afBarHeat));
+        afSweepPos = 0;
+        drawAfEqualizer();
 
         // Stats area — show zeros
         tft.setTextColor(HALEHOUND_GUNMETAL);
@@ -2570,56 +2677,11 @@ static void drawAttackScreen() {
 }
 
 static void updateAttackDisplay() {
-    // Swell phase — cycles 0→7, drives skull color + FLOODING pulse
-    static int swellPhase = 0;
-    swellPhase = (swellPhase + 1) % 8;
+    // Equalizer animation — handles its own clear area
+    drawAfEqualizer();
 
-    // Clear skull + stats area (preserve target info and button)
-    tft.fillRect(0, 141, SCREEN_WIDTH, 155, HALEHOUND_BLACK);
-
-    // Rotating skull — color pulses with swell phase
-    int skullX = SCREEN_WIDTH / 2 - 16;
-    skullFrame = (skullFrame + 1) % numSkulls;
-
-    // Skull color follows swell: gunmetal → violet → magenta → hotpink → bright → back
-    uint16_t skullColor;
-    switch (swellPhase) {
-        case 0: skullColor = HALEHOUND_VIOLET;   break;
-        case 1: skullColor = HALEHOUND_MAGENTA;  break;
-        case 2: skullColor = HALEHOUND_HOTPINK;  break;
-        case 3: skullColor = 0xFFFF;             break;  // Peak white
-        case 4: skullColor = HALEHOUND_HOTPINK;  break;
-        case 5: skullColor = HALEHOUND_MAGENTA;  break;
-        case 6: skullColor = HALEHOUND_VIOLET;   break;
-        case 7: skullColor = HALEHOUND_GUNMETAL; break;
-        default: skullColor = HALEHOUND_HOTPINK; break;
-    }
-    tft.drawBitmap(skullX, 150, skullIcons[skullFrame], 32, 32, skullColor);
-
-    // FLOODING swell — text pulses through color cycle like injection pressure
-    // Nosifer font at 10pt, color rides the swell wave
-    uint16_t floodColor;
-    switch (swellPhase) {
-        case 0: floodColor = HALEHOUND_GUNMETAL; break;  // Dim — building pressure
-        case 1: floodColor = HALEHOUND_VIOLET;   break;  // Rising
-        case 2: floodColor = HALEHOUND_MAGENTA;  break;  // Swelling
-        case 3: floodColor = HALEHOUND_HOTPINK;  break;  // Peak injection
-        case 4: floodColor = 0xFFFF;             break;  // BURST — white flash
-        case 5: floodColor = HALEHOUND_HOTPINK;  break;  // Fading
-        case 6: floodColor = HALEHOUND_MAGENTA;  break;  // Cooling
-        case 7: floodColor = HALEHOUND_VIOLET;   break;  // Reset
-        default: floodColor = HALEHOUND_HOTPINK; break;
-    }
-
-    // Draw FLOODING with swell color (manual — can't use drawGlitchStatus for dynamic color)
-    tft.setFreeFont(&Nosifer_Regular10pt7b);
-    tft.setTextColor(floodColor, TFT_BLACK);
-    int floodW = tft.textWidth("FLOODING");
-    int floodX = (SCREEN_WIDTH - floodW) / 2;
-    if (floodX < 0) floodX = 0;
-    tft.setCursor(floodX, 190);
-    tft.print("FLOODING");
-    tft.setFreeFont(NULL);
+    // Clear only the stats area (footer is static — drawn once by drawAttackScreen)
+    tft.fillRect(0, 213, SCREEN_WIDTH, 65, HALEHOUND_BLACK);
 
     // ── Stats spread across full width ──
     tft.setTextSize(1);
@@ -2656,11 +2718,6 @@ static void updateAttackDisplay() {
     tft.setCursor(140, 269);
     tft.printf("CH: %d", targetAp.primary);
 
-    // Footer
-    tft.drawLine(5, 290, SCREEN_WIDTH - 5, 290, HALEHOUND_DARK);
-    tft.setTextColor(HALEHOUND_GUNMETAL);
-    tft.setCursor(5, SCREEN_HEIGHT - 16);
-    tft.print("SELECT=Stop  BACK=Stop & Exit");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2945,7 +3002,7 @@ void loop() {
 
         // Update display every 100ms
         static unsigned long lastDisplayUpdate = 0;
-        if (now - lastDisplayUpdate >= 100) {
+        if (now - lastDisplayUpdate >= 50) {
             lastDisplayUpdate = now;
             updateAttackDisplay();
         }
@@ -2965,7 +3022,8 @@ void cleanup() {
     exitRequested = false;
     targetSelected = false;
     lastStateChange = 0;
-    skullFrame = 0;
+    memset(afBarHeat, 0, sizeof(afBarHeat));
+    afSweepPos = 0;
     WiFi.mode(WIFI_OFF);
 
     #if CYD_DEBUG

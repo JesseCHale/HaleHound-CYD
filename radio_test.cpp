@@ -266,22 +266,93 @@ static void runCC1101Test(int statusY, int hintY) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WIRING REFERENCE SCREEN
+// WIRING DIAGRAMS — Duggie's KiCad layouts as TFT block diagrams
+// 4 pages: text reference + NRF24 diagram + GPS diagram + CC1101 diagram
 // ═══════════════════════════════════════════════════════════════════════════
 
-static void showWiringScreen() {
+static int wiringPage = 0;
+#define WIRING_NUM_PAGES 4
+
+// Diagram layout constants
+#define DIAG_LEFT_X     5
+#define DIAG_LEFT_W     85
+#define DIAG_RIGHT_X    150
+#define DIAG_RIGHT_W    85
+#define DIAG_TRACE_X1   (DIAG_LEFT_X + DIAG_LEFT_W)
+#define DIAG_TRACE_X2   DIAG_RIGHT_X
+
+// Draw a single pin row with colored trace line between two chip boxes
+static void drawPinTrace(int y, const char* leftPin, const char* rightPin,
+                          uint16_t color, bool dashed = false) {
+    int traceY = y + 4;
+
+    // Left label (right-aligned inside left box)
+    tft.setTextColor(color, TFT_BLACK);
+    int lw = strlen(leftPin) * 6;
+    tft.setCursor(DIAG_LEFT_X + DIAG_LEFT_W - lw - 8, y);
+    tft.print(leftPin);
+
+    // Solder dots at box edges
+    tft.fillCircle(DIAG_TRACE_X1, traceY, 2, color);
+    tft.fillCircle(DIAG_TRACE_X2, traceY, 2, color);
+
+    // Trace line (2px thick for visibility)
+    if (dashed) {
+        for (int x = DIAG_TRACE_X1 + 4; x < DIAG_TRACE_X2 - 4; x += 8) {
+            tft.drawFastHLine(x, traceY, 4, color);
+            tft.drawFastHLine(x, traceY + 1, 4, color);
+        }
+    } else {
+        int len = DIAG_TRACE_X2 - DIAG_TRACE_X1 - 6;
+        tft.drawFastHLine(DIAG_TRACE_X1 + 3, traceY, len, color);
+        tft.drawFastHLine(DIAG_TRACE_X1 + 3, traceY + 1, len, color);
+    }
+
+    // Right label (left-aligned inside right box)
+    tft.setCursor(DIAG_RIGHT_X + 8, y);
+    tft.print(rightPin);
+}
+
+// Draw page navigation footer
+static void drawPageNav(int page, int total) {
+    tft.setTextFont(1);
+    tft.setTextSize(1);
+
+    // Left/right arrows
+    tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
+    tft.setCursor(15, 287);
+    tft.print("<");
+    tft.setCursor(SCREEN_WIDTH - 21, 287);
+    tft.print(">");
+
+    // Page number
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d/%d", page + 1, total);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    int tw = strlen(buf) * 6;
+    tft.setCursor((SCREEN_WIDTH - tw) / 2, 287);
+    tft.print(buf);
+
+    // Navigation hint
+    tft.setTextColor(HALEHOUND_GUNMETAL, TFT_BLACK);
+    tft.setCursor(22, 305);
+    tft.print("TAP </> = Page  BACK = Exit");
+}
+
+// ── Page 0: Text wiring reference (original pin lists) ──
+static void drawWiringText() {
     tft.fillScreen(TFT_BLACK);
     drawStatusBar();
     drawInoIconBar();
     drawGlitchTitle(60, "WIRING");
 
+    tft.setTextFont(1);
+    tft.setTextSize(1);
     int y = 80;
     int lineH = 12;
 
     // NRF24 section
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.setTextFont(1);
-    tft.setTextSize(1);
     tft.setCursor(10, y);
     tft.print("--- NRF24L01+PA+LNA ---");
     y += lineH + 2;
@@ -332,13 +403,207 @@ static void showWiringScreen() {
     tft.setCursor(10, y);
     tft.printf("SD CS = GPIO %d", SD_CS);
 
-    // Wait for back
+    drawPageNav(0, WIRING_NUM_PAGES);
+}
+
+// ── Page 1: NRF24L01+ block diagram ──
+static void drawNrf24Diagram() {
+    tft.fillScreen(TFT_BLACK);
+    drawStatusBar();
+    drawInoIconBar();
+    drawGlitchTitle(60, "NRF24 WIRING");
+
+    tft.setTextFont(1);
+    tft.setTextSize(1);
+
+    int pinSpace = 18;
+    int boxY = 82;
+    int boxH = 8 * pinSpace + 22;
+
+    // Left box — ESP32
+    tft.drawRect(DIAG_LEFT_X, boxY, DIAG_LEFT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_LEFT_X + 1, boxY + 1, DIAG_LEFT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_LEFT_X + 25, boxY + 4);
+    tft.print("ESP32");
+
+    // Right box — NRF24L01+
+    tft.drawRect(DIAG_RIGHT_X, boxY, DIAG_RIGHT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_RIGHT_X + 1, boxY + 1, DIAG_RIGHT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_RIGHT_X + 8, boxY + 4);
+    tft.print("NRF24L01+");
+
+    // Pin traces — color coded like Duggie's KiCad
+    int py = boxY + 20;
+    drawPinTrace(py, "3.3V",  "VCC",  TFT_RED,            false);  py += pinSpace;
+    drawPinTrace(py, "GND",   "GND",  TFT_WHITE,          false);  py += pinSpace;
+    drawPinTrace(py, "IO18",  "SCK",  TFT_CYAN,           false);  py += pinSpace;
+    drawPinTrace(py, "IO23",  "MOSI", TFT_CYAN,           false);  py += pinSpace;
+    drawPinTrace(py, "IO19",  "MISO", TFT_CYAN,           false);  py += pinSpace;
+    drawPinTrace(py, "IO4",   "CSN",  HALEHOUND_MAGENTA,  false);  py += pinSpace;
+    drawPinTrace(py, "IO16",  "CE",   HALEHOUND_MAGENTA,  false);  py += pinSpace;
+    drawPinTrace(py, "IO17",  "IRQ",  HALEHOUND_GUNMETAL, true);
+
+    // Notes
+    int noteY = boxY + boxH + 6;
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.print("3.3V+GND from CN1 (IO22/IO27 plug)");
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setCursor(5, noteY + 14);
+    tft.print("No cap needed from this source!");
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(5, noteY + 28);
+    tft.print("Shares VSPI with CC1101 + SD");
+
+    drawPageNav(1, WIRING_NUM_PAGES);
+}
+
+// ── Page 2: GPS block diagram ──
+static void drawGpsDiagram() {
+    tft.fillScreen(TFT_BLACK);
+    drawStatusBar();
+    drawInoIconBar();
+    drawGlitchTitle(60, "GPS WIRING");
+
+    tft.setTextFont(1);
+    tft.setTextSize(1);
+
+    int pinSpace = 22;
+    int boxY = 95;
+    int boxH = 4 * pinSpace + 22;
+
+    // Left box — CYD P1 Connector
+    tft.drawRect(DIAG_LEFT_X, boxY, DIAG_LEFT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_LEFT_X + 1, boxY + 1, DIAG_LEFT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_LEFT_X + 15, boxY + 4);
+    tft.print("CYD  P1");
+
+    // Right box — GT-U7 GPS
+    tft.drawRect(DIAG_RIGHT_X, boxY, DIAG_RIGHT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_RIGHT_X + 1, boxY + 1, DIAG_RIGHT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_RIGHT_X + 6, boxY + 4);
+    tft.print("GT-U7 GPS");
+
+    // Pin traces
+    int py = boxY + 22;
+    drawPinTrace(py, "VIN",    "VCC", TFT_RED,            false);  py += pinSpace;
+    drawPinTrace(py, "GND",    "GND", TFT_WHITE,          false);  py += pinSpace;
+    drawPinTrace(py, "RX IO3", "TX",  TFT_CYAN,           false);  py += pinSpace;
+    drawPinTrace(py, "TX IO1", "RX",  TFT_CYAN,          false);
+
+    // Notes
+    int noteY = boxY + boxH + 10;
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.print("GPIO3 shared with CH340C USB!");
+    noteY += 14;
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.print("Serial.end() before GPS init");
+
+    drawPageNav(2, WIRING_NUM_PAGES);
+}
+
+// ── Page 3: CC1101 block diagram ──
+static void drawCC1101Diagram() {
+    tft.fillScreen(TFT_BLACK);
+    drawStatusBar();
+    drawInoIconBar();
+    drawGlitchTitle(60, "CC1101 WIRING");
+
+    tft.setTextFont(1);
+    tft.setTextSize(1);
+
+    int pinSpace = 18;
+    int boxY = 82;
+    int boxH = 8 * pinSpace + 22;
+
+    // Left box — ESP32
+    tft.drawRect(DIAG_LEFT_X, boxY, DIAG_LEFT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_LEFT_X + 1, boxY + 1, DIAG_LEFT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_LEFT_X + 25, boxY + 4);
+    tft.print("ESP32");
+
+    // Right box — CC1101
+    tft.drawRect(DIAG_RIGHT_X, boxY, DIAG_RIGHT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_RIGHT_X + 1, boxY + 1, DIAG_RIGHT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_RIGHT_X + 18, boxY + 4);
+    tft.print("CC1101");
+
+    // Pin traces — color coded like Duggie's KiCad
+    int py = boxY + 20;
+    drawPinTrace(py, "3.3V",  "VCC",     TFT_RED,           false);  py += pinSpace;
+    drawPinTrace(py, "GND",   "GND",     TFT_WHITE,         false);  py += pinSpace;
+    drawPinTrace(py, "IO27",  "CS",      HALEHOUND_MAGENTA, false);  py += pinSpace;
+    drawPinTrace(py, "IO18",  "SCK",     TFT_CYAN,          false);  py += pinSpace;
+    drawPinTrace(py, "IO23",  "MOSI",    TFT_CYAN,          false);  py += pinSpace;
+    drawPinTrace(py, "IO19",  "MISO",    TFT_CYAN,          false);  py += pinSpace;
+    drawPinTrace(py, "IO22",  "GDO0 TX", HALEHOUND_HOTPINK, false);  py += pinSpace;
+    drawPinTrace(py, "IO35",  "GDO2 RX", TFT_YELLOW,        false);
+
+    // Notes
+    int noteY = boxY + boxH + 6;
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.print("3.3V+GND from CN1 (IO22/IO27 plug)");
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setCursor(5, noteY + 14);
+    tft.print("No cap needed from this source!");
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(5, noteY + 28);
+    tft.print("GDO0=TX(out)  GDO2=RX(in)");
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(5, noteY + 42);
+    tft.print("CS=CN1  GDO0/GDO2=P3 connector");
+
+    drawPageNav(3, WIRING_NUM_PAGES);
+}
+
+// Page dispatcher
+static void drawCurrentWiringPage() {
+    switch (wiringPage) {
+        case 0:  drawWiringText();    break;
+        case 1:  drawNrf24Diagram();  break;
+        case 2:  drawGpsDiagram();    break;
+        case 3:  drawCC1101Diagram(); break;
+        default: drawWiringText();    break;
+    }
+}
+
+// Multi-page wiring viewer with LEFT/RIGHT navigation
+static void showWiringScreen() {
+    wiringPage = 0;
+    drawCurrentWiringPage();
+
     bool exitWiring = false;
     while (!exitWiring) {
         touchButtonsUpdate();
+
         if (isBackButtonTapped() || buttonPressed(BTN_BACK) || buttonPressed(BTN_BOOT)) {
             exitWiring = true;
+            break;
         }
+
+        // Right arrow — tap right side of screen
+        if (isTouchInArea(180, 275, 60, 40) || buttonPressed(BTN_RIGHT)) {
+            wiringPage = (wiringPage + 1) % WIRING_NUM_PAGES;
+            drawCurrentWiringPage();
+            delay(250);
+        }
+
+        // Left arrow — tap left side of screen
+        if (isTouchInArea(0, 275, 60, 40) || buttonPressed(BTN_LEFT)) {
+            wiringPage = (wiringPage + WIRING_NUM_PAGES - 1) % WIRING_NUM_PAGES;
+            drawCurrentWiringPage();
+            delay(250);
+        }
+
         delay(20);
     }
 }
