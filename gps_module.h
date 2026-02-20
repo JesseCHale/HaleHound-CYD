@@ -48,6 +48,7 @@ struct GPSData {
     int minute;
     int second;
     uint32_t age;           // Age of last fix in ms
+    double hdop;            // Horizontal dilution of precision
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
