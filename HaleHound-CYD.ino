@@ -573,6 +573,7 @@ void handleWiFiSubmenuTouch() {
                         touchButtonsUpdate();
                         if (isBackButtonTapped()) feature_exit_requested = true;
                     }
+                    PacketMonitor::cleanup();
                     break;
                 case 1: // Beacon Spammer
                     BeaconSpammer::setup();
