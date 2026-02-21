@@ -75,6 +75,33 @@ static bool rmtInitialized = false;
 static RingbufHandle_t rmtRxRingBuf = NULL;
 static bool rmtRxInitialized = false;
 
+// GDO0 and GDO2 share GPIO 22 — RMT TX and RX can't run simultaneously
+// Pause RX before any TX operation, resume after
+static void pauseRmtRx() {
+    if (rmtRxInitialized) {
+        rmt_rx_stop(RMT_RX_CHANNEL);
+        rmt_driver_uninstall(RMT_RX_CHANNEL);
+        rmtRxInitialized = false;
+        rmtRxRingBuf = NULL;
+    }
+}
+
+static void resumeRmtRx() {
+    if (rmtRxInitialized) return;
+    rmt_config_t rxConfig = RMT_DEFAULT_CONFIG_RX((gpio_num_t)CC1101_GDO2, RMT_RX_CHANNEL);
+    rxConfig.clk_div = RMT_CLK_DIV;
+    rxConfig.rx_config.filter_en = true;
+    rxConfig.rx_config.filter_ticks_thresh = 100;
+    rxConfig.rx_config.idle_threshold = 12000;
+    if (rmt_config(&rxConfig) == ESP_OK) {
+        if (rmt_driver_install(RMT_RX_CHANNEL, RMT_RX_BUF_SIZE, 0) == ESP_OK) {
+            rmt_get_ringbuf_handle(RMT_RX_CHANNEL, &rmtRxRingBuf);
+            rmt_rx_start(RMT_RX_CHANNEL, true);
+            rmtRxInitialized = true;
+        }
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // FREQUENCY LIST
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1006,8 +1033,9 @@ void sendSignal(unsigned long value, int bitLength, int protocol) {
         return;
     }
 
-    // Disable receive
+    // Disable receive — RMT RX and rcSwitch both share GPIO 22 with TX
     rcSwitch.disableReceive();
+    pauseRmtRx();
     delay(50);
 
     // Switch CC1101 to TX mode at max power
@@ -1043,9 +1071,10 @@ void sendSignal(unsigned long value, int bitLength, int protocol) {
     tft.setCursor(10, 120);
     tft.print("[+] Done!");
 
-    // Switch back to RX
+    // Switch back to RX — resume RMT RX on shared GPIO 22
     ELECHOUSE_cc1101.SetRx();
     delay(100);
+    resumeRmtRx();
     rcSwitch.enableReceive(CC1101_GDO2);
 
     delay(500);

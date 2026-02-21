@@ -137,8 +137,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #define CC1101_CS       27    // Chip Select - CN1 connector
-#define CC1101_GDO0     22    // TX data TO radio - P3 connector
-#define CC1101_GDO2     35    // RX data FROM radio - P3 connector (INPUT ONLY)
+#define CC1101_GDO0     22    // TX data TO radio - CN1 connector
+#define CC1101_GDO2     22    // RX data FROM radio - same as GDO0 (ELECHOUSE setCCMode(0)
+                              // sets BOTH IOCFG0 and IOCFG2 to 0x0D serial sync data)
+                              // GPIO 35 NOT required — proven by xs8nx
 
 // SPI bus aliases
 #define CC1101_SCK      RADIO_SPI_SCK
@@ -175,9 +177,15 @@
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
-#define NRF24_CSN        4    // Chip Select - was RGB Red
-#define NRF24_CE        16    // Chip Enable - was RGB Green
-#define NRF24_IRQ       17    // Interrupt - was RGB Blue (OPTIONAL)
+#ifdef NMRF_HAT
+  // NM-RF-Hat: physical switch selects CC1101 or NRF24 on same two GPIOs
+  #define NRF24_CSN     27    // Shared with CC1101_CS via hat switch
+  #define NRF24_CE      22    // Shared with CC1101_GDO0 via hat switch
+#else
+  #define NRF24_CSN      4    // Chip Select - was RGB Red
+  #define NRF24_CE      16    // Chip Enable - was RGB Green
+  #define NRF24_IRQ     17    // Interrupt - was RGB Blue (OPTIONAL)
+#endif
 
 // SPI bus aliases
 #define NRF24_SCK       RADIO_SPI_SCK
