@@ -5,9 +5,9 @@
 // Updated: 2026-02-07 - Full implementation port
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// NRF24 PIN CONFIGURATION FOR CYD:
-//   CE  = GPIO16
-//   CSN = GPIO4
+// NRF24 PIN CONFIGURATION:
+//   Standard CYD: CE=GPIO16, CSN=GPIO4
+//   NM-RF-Hat:    CE=GPIO22, CSN=GPIO27 (shared with CC1101 via hat switch)
 //   SCK = GPIO18 (shared SPI)
 //   MOSI = GPIO23 (shared SPI)
 //   MISO = GPIO19 (shared SPI)
@@ -26,11 +26,11 @@
 // Available: FreeMonoBold9pt7b, FreeMonoBold12pt7b, FreeMonoBold18pt7b, etc.
 
 // ═══════════════════════════════════════════════════════════════════════════
-// NRF24 PIN DEFINITIONS FOR CYD
+// NRF24 PIN DEFINITIONS — from cyd_config.h (respects NMRF_HAT)
 // ═══════════════════════════════════════════════════════════════════════════
 
-#define NRF_CE   16
-#define NRF_CSN  4
+#define NRF_CE   NRF24_CE
+#define NRF_CSN  NRF24_CSN
 
 // Use default SPI object (VSPI) - shared with SD card, separate CS pins
 
@@ -201,11 +201,14 @@ static bool nrfInit() {
     digitalWrite(NRF_CSN, HIGH);
 
     // ALWAYS deselect other SPI devices (CS HIGH) before NRF24 operations
-    // CC1101 CS = GPIO 27, SD CS = GPIO 5
-    pinMode(27, OUTPUT);
-    digitalWrite(27, HIGH);  // Deselect CC1101
-    pinMode(5, OUTPUT);
-    digitalWrite(5, HIGH);   // Deselect SD card
+    #ifndef NMRF_HAT
+    // Standard CYD: CC1101 CS (GPIO 27) is separate from NRF24 CSN (GPIO 4)
+    pinMode(CC1101_CS, OUTPUT);
+    digitalWrite(CC1101_CS, HIGH);  // Deselect CC1101
+    #endif
+    // Hat: CC1101_CS == NRF24_CSN == GPIO 27 — already deselected above via NRF_CSN
+    pinMode(SD_CS, OUTPUT);
+    digitalWrite(SD_CS, HIGH);   // Deselect SD card
 
     // Reset SPI bus with proper settle time between end/begin
     SPI.end();
@@ -560,7 +563,7 @@ void scannerSetup() {
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
         drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, ("CE=GPIO" + String(NRF24_CE) + " CSN=GPIO" + String(NRF24_CSN)).c_str(), HALEHOUND_MAGENTA, 1);
         drawCenteredText(160, "Add 10uF cap on VCC!", HALEHOUND_VIOLET, 1);
         return;
     }
@@ -962,7 +965,7 @@ void analyzerSetup() {
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
         drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, ("CE=GPIO" + String(NRF24_CE) + " CSN=GPIO" + String(NRF24_CSN)).c_str(), HALEHOUND_MAGENTA, 1);
         return;
     }
 
@@ -1528,7 +1531,7 @@ void wlanjammerSetup() {
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
         drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, ("CE=GPIO" + String(NRF24_CE) + " CSN=GPIO" + String(NRF24_CSN)).c_str(), HALEHOUND_MAGENTA, 1);
         uiInitialized = false;
         return;
     }
@@ -2109,7 +2112,7 @@ void prokillSetup() {
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
         drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, ("CE=GPIO" + String(NRF24_CE) + " CSN=GPIO" + String(NRF24_CSN)).c_str(), HALEHOUND_MAGENTA, 1);
         uiInitialized = false;
         return;
     }

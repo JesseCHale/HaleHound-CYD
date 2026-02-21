@@ -26,7 +26,11 @@ void nrf24ClaimSPI() {
     if (spiClaimed) return;
 
     // Make sure CC1101 is not using the bus
+    #ifndef NMRF_HAT
+    // Standard CYD: CC1101 CS (GPIO 27) is separate — safe to send setSidle
+    // Hat: CC1101_CS == NRF24_CSN == GPIO 27 — setSidle would corrupt NRF24
     ELECHOUSE_cc1101.setSidle();
+    #endif
 
     // Initialize SPI for NRF24
     SPI.end();
