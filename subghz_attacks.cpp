@@ -1663,6 +1663,7 @@ void setup() {
     // Configure CC1101 SPI and GDO pins
     ELECHOUSE_cc1101.setSpiPin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, CC1101_CS);
     ELECHOUSE_cc1101.setGDO(CC1101_GDO0, CC1101_GDO2);
+    pinMode(CC1101_GDO0, OUTPUT);  // GDO_Set() leaves as INPUT when GDO0==GDO2
 
     // Initialize CC1101
     if (ELECHOUSE_cc1101.getCC1101()) {
