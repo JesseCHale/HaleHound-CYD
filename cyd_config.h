@@ -137,10 +137,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #define CC1101_CS       27    // Chip Select - CN1 connector
-#define CC1101_GDO0     22    // TX data TO radio - CN1 connector
-#define CC1101_GDO2     22    // RX data FROM radio - same as GDO0 (ELECHOUSE setCCMode(0)
-                              // sets BOTH IOCFG0 and IOCFG2 to 0x0D serial sync data)
-                              // GPIO 35 NOT required — proven by xs8nx
+#define CC1101_GDO0     22    // TX data TO radio - P3 connector
+#ifdef NMRF_HAT
+  #define CC1101_GDO2   22    // Hat: no GDO2 wire — GDO0 outputs same RX data
+#else
+  #define CC1101_GDO2   35    // RX data FROM radio - P3 connector (INPUT ONLY)
+#endif
 
 // SPI bus aliases
 #define CC1101_SCK      RADIO_SPI_SCK

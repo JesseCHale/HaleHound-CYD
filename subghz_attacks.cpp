@@ -75,8 +75,8 @@ static bool rmtInitialized = false;
 static RingbufHandle_t rmtRxRingBuf = NULL;
 static bool rmtRxInitialized = false;
 
-// GDO0 and GDO2 share GPIO 22 — RMT TX and RX can't run simultaneously
-// Pause RX before any TX operation, resume after
+#ifdef NMRF_HAT
+// Hat: GDO0 and GDO2 share GPIO 22 — RMT TX and RX can't run simultaneously
 static void pauseRmtRx() {
     if (rmtRxInitialized) {
         rmt_rx_stop(RMT_RX_CHANNEL);
@@ -101,6 +101,7 @@ static void resumeRmtRx() {
         }
     }
 }
+#endif
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FREQUENCY LIST
@@ -1033,9 +1034,11 @@ void sendSignal(unsigned long value, int bitLength, int protocol) {
         return;
     }
 
-    // Disable receive — RMT RX and rcSwitch both share GPIO 22 with TX
+    // Disable receive
     rcSwitch.disableReceive();
-    pauseRmtRx();
+    #ifdef NMRF_HAT
+    pauseRmtRx();  // Hat: GDO0==GDO2, must stop RMT RX before TX
+    #endif
     delay(50);
 
     // Switch CC1101 to TX mode at max power
@@ -1071,10 +1074,12 @@ void sendSignal(unsigned long value, int bitLength, int protocol) {
     tft.setCursor(10, 120);
     tft.print("[+] Done!");
 
-    // Switch back to RX — resume RMT RX on shared GPIO 22
+    // Switch back to RX
     ELECHOUSE_cc1101.SetRx();
     delay(100);
-    resumeRmtRx();
+    #ifdef NMRF_HAT
+    resumeRmtRx();  // Hat: restart RMT RX after TX done
+    #endif
     rcSwitch.enableReceive(CC1101_GDO2);
 
     delay(500);
@@ -1663,7 +1668,9 @@ void setup() {
     // Configure CC1101 SPI and GDO pins
     ELECHOUSE_cc1101.setSpiPin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, CC1101_CS);
     ELECHOUSE_cc1101.setGDO(CC1101_GDO0, CC1101_GDO2);
-    pinMode(CC1101_GDO0, OUTPUT);  // GDO_Set() leaves as INPUT when GDO0==GDO2
+    #ifdef NMRF_HAT
+    pinMode(CC1101_GDO0, OUTPUT);  // Hat: GDO_Set() leaves as INPUT when GDO0==GDO2
+    #endif
 
     // Initialize CC1101
     if (ELECHOUSE_cc1101.getCC1101()) {
