@@ -1508,7 +1508,11 @@ static void hopChannel() {
         }
     }
 
+    // Must toggle CE to force PLL retune during CONT_WAVE!
+    // Just writing RF_CH does NOT retune the PLL — carrier stays on old freq
+    nrfDisable();                     // CE LOW
     nrfSetChannel(currentNRFChannel);
+    nrfEnable();                      // CE HIGH — PLL locks on new frequency
 }
 
 void wlanjammerSetup() {
@@ -1765,10 +1769,11 @@ static const char* getModeString(OperationMode mode) {
 
 // Start carrier wave on specific channel (proper TX mode)
 static void pkStartCarrier(byte channel) {
+    nrfDisable();                     // CE LOW — force PLL retune on channel change
     nrfSetTX();                       // Switch to TX mode FIRST!
     nrfSetChannel(channel);
     nrfSetRegister(0x06, 0x9E);       // CONT_WAVE + PLL_LOCK + 0dBm + 2Mbps
-    nrfEnable();
+    nrfEnable();                      // CE HIGH — PLL locks on new frequency
 }
 
 static void pkStopCarrier() {

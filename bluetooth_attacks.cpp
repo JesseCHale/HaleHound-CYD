@@ -9,6 +9,7 @@
 #include "touch_buttons.h"
 #include "utils.h"
 #include "icon.h"
+#include "nrf24_config.h"
 #include <BLEDevice.h>
 #include <BLEAdvertising.h>
 #include <SPI.h>
@@ -2994,16 +2995,69 @@ namespace BleJammer {
 #define BJ_BT_NRF_START    2     // BT channel 0 = NRF channel 2
 #define BJ_BT_NRF_END      80    // BT channel 78 = NRF channel 80
 
-// BLE Advertising channel NRF24 mappings
+// BLE Advertising channel NRF24 mappings (used by equalizer display markers)
 static const uint8_t BJ_ADV_CHANNELS[] = {2, 26, 80};  // Ch37, Ch38, Ch39
 #define BJ_ADV_COUNT 3
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CHANNEL ARRAYS — Bruce firmware pattern (PROVEN WORKING ON AIRPODS)
+// Bruce: startConstCarrier() once → setChannel() in tight loop = KILLS BLE
+// We tried raw SPI, data flooding, CE toggling — all FAILED.
+// Bruce's simple pattern WORKS. Don't overthink it.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// BLE channels — NRF24 ch 2-41 (all 40 BLE data + advertising channels)
+// This is what kills CONNECTED devices (AirPods, speakers, headphones)
+static const uint8_t BJ_BLE_CHANNELS[] = {
+     2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+    22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41
+};
+#define BJ_BLE_COUNT 40
+
+// BLE Advertising Priority — Bruce firmware's exact channel set
+// Targets ADV frequencies (2402/2426/2480 MHz) + adjacent channels for splash
+static const uint8_t BJ_BLE_ADV_CHANNELS[] = {37, 38, 39, 1, 2, 3, 25, 26, 27, 79, 80, 81};
+#define BJ_BLE_ADV_COUNT 12
+
+// Full Bluetooth band — NRF24 ch 2-80 (all 79 BT channels)
+static const uint8_t BJ_BT_CHANNELS[] = {
+     2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+    22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+    42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+    62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80
+};
+#define BJ_BT_COUNT 79
+
+// ADV KILL — ONLY the 3 BLE advertising channels (maximum focus)
+// BLE adv ch 37 = 2402 MHz = NRF24 ch 2
+// BLE adv ch 38 = 2426 MHz = NRF24 ch 26
+// BLE adv ch 39 = 2480 MHz = NRF24 ch 80
+// Each channel gets 33% of jammer time — nowhere to reconnect
+static const uint8_t BJ_ADV_KILL_CHANNELS[] = {2, 26, 80};
+#define BJ_ADV_KILL_COUNT 3
+
 // Jamming modes
-#define BJ_MODE_ALL     0    // All 79 BT channels (NRF 2-80)
-#define BJ_MODE_ADV     1    // ADV only: NRF 2, 26, 80
-#define BJ_MODE_DATA    2    // Data only: NRF 2-80 skip ADV channels
-#define BJ_MODE_COUNT   3
-static const char* BJ_MODE_NAMES[] = {"ALL CHANNELS", "ADV ONLY", "DATA ONLY"};
+#define BJ_MODE_BLE      0    // BLE data+adv channels — kills connected devices
+#define BJ_MODE_BLE_ADV  1    // BLE advertising priority — disrupts discovery/pairing
+#define BJ_MODE_BT       2    // Full Bluetooth band — maximum coverage
+#define BJ_MODE_ADV_KILL 3    // ADV KILL — 3 channels only, maximum range
+#define BJ_MODE_COUNT    4
+static const char* BJ_MODE_NAMES[] = {"BLE", "BLE ADV", "BLUETOOTH", "ADV KILL"};
+
+// Mode channel pointers for clean loop access
+// Adaptive dwell: target ~1.5ms sweep regardless of channel count
+// Fewer channels = longer dwell per channel = same sweep rate for all modes
+struct BjJamMode {
+    const uint8_t* channels;
+    int count;
+    int dwellUs;  // microseconds to sit on each channel
+};
+static const BjJamMode bjModes[] = {
+    {BJ_BLE_CHANNELS,      BJ_BLE_COUNT,      38},   // 40ch × 38us = 1.52ms sweep
+    {BJ_BLE_ADV_CHANNELS,  BJ_BLE_ADV_COUNT,  125},  // 12ch × 125us = 1.50ms sweep
+    {BJ_BT_CHANNELS,       BJ_BT_COUNT,       19},   // 79ch × 19us = 1.50ms sweep
+    {BJ_ADV_KILL_CHANNELS, BJ_ADV_KILL_COUNT, 500}   //  3ch × 500us = 1.50ms sweep — MAXIMUM FOCUS
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DISPLAY CONSTANTS - 85-BAR EQUALIZER (matches WLAN/SubGHz Jammer)
@@ -3020,40 +3074,109 @@ static const char* BJ_MODE_NAMES[] = {"ALL CHANNELS", "ADV ONLY", "DATA ONLY"};
 #define BJ_SKULL_ROW_SPACING 18
 #define BJ_SKULL_NUM         8
 
-// NRF24 register constants (local - avoids dependency on nrf24_attacks.cpp statics)
-#define BJ_NRF_CONFIG    0x00
-#define BJ_NRF_EN_AA     0x01
-#define BJ_NRF_SETUP_RETR 0x04
-#define BJ_NRF_RF_CH     0x05
-#define BJ_NRF_RF_SETUP  0x06
-#define BJ_NRF_STATUS    0x07
-#define BJ_NRF_TX_ADDR   0x10
-#define BJ_NRF_REUSE_TX  0xE3
-#define BJ_NRF_FLUSH_TX  0xE1
-#define BJ_NRF_W_TX_PL   0xA0
-
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE VARIABLES
 // ═══════════════════════════════════════════════════════════════════════════
 static bool initialized = false;
 static bool exitRequested = false;
-static bool jamming = false;
-static int currentMode = BJ_MODE_ALL;
-static int currentNRFChannel = BJ_BT_NRF_START;
-static int advChannelIndex = 0;
-static bool noiseMode = false;          // false = carrier wave, true = noise bursts
-static unsigned long lastHopTime = 0;
+static volatile bool jamming = false;           // volatile — shared between cores
+static int currentMode = BJ_MODE_BLE_ADV;        // Default BLE ADV — proven AirPod killer
+static volatile int currentNRFChannel = BJ_BT_NRF_START;  // volatile — read by display, written by jam task
+static volatile int hopIndex = 0;
 static unsigned long lastDisplayTime = 0;
-
-static const int HOP_DELAY_US = 500;    // 500µs = 2000 hops/sec
+static volatile int bjHitCount = 0;             // volatile — incremented by jam task, read by display
 
 // Equalizer heat levels
 static uint8_t channelHeat[BJ_NUM_BARS] = {0};
 static int skullFrame = 0;
-static int bjHitCount = 0;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE JAMMER — FreeRTOS task on Core 0
+// NRF24 uses VSPI (GPIO 18/19/23). Display uses HSPI (GPIO 12/13/14).
+// Separate hardware SPI buses = zero conflict. Jammer runs 100% duty cycle
+// on core 0 while display animations run full speed on core 1.
+// ═══════════════════════════════════════════════════════════════════════════
+static TaskHandle_t bjJamTaskHandle = NULL;
+static volatile bool bjJamTaskRunning = false;
+static volatile bool bjJamTaskDone = false;      // task signals when cleanup is complete
+static volatile int bjJamMode = BJ_MODE_BLE_ADV; // shadow of currentMode for jam task
+
+static void bjJamTask(void* param) {
+    // ═══════════════════════════════════════════════════════════════════════
+    // ALL SPI + NRF24 operations happen HERE on core 0.
+    // ESP32 SPI driver registers ISR on the core that calls spi_bus_initialize().
+    // If we init on core 1 and use from core 0, transactions are malformed/weak.
+    // Solution: init, use, AND cleanup all on core 0. Core 1 never touches radio.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // Init SPI on THIS core
+    SPI.end();
+    delay(2);
+    SPI.begin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, NRF24_CSN);
+    delay(5);
+
+    // Init radio on THIS core
+    if (!nrf24Radio.begin()) {
+        Serial.println("[BLEJAM] Core 0: NRF24 begin() FAILED");
+        bjJamTaskDone = true;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // startConstCarrier — continuous wave, 100% duty cycle, ALWAYS transmitting
+    // setChannel() just steers the frequency — carrier never stops
+    // This is what was PROVEN to kill AirPods on the spectrum analyzer
+    nrf24Radio.stopListening();
+    nrf24Radio.setPALevel(RF24_PA_MAX);
+    nrf24Radio.startConstCarrier(RF24_PA_MAX, 50);
+    nrf24Radio.setAddressWidth(5);
+    nrf24Radio.setPayloadSize(2);
+    nrf24Radio.setDataRate(RF24_2MBPS);
+
+    Serial.printf("[BLEJAM] Core 0: SPI + NRF24 initialized, CW carrier active, isPVariant=%d\n",
+                  nrf24Radio.isPVariant());
+
+    int localHop = 0;
+    int yieldCounter = 0;
+
+    while (bjJamTaskRunning) {
+        int mode = bjJamMode;  // local copy to avoid race
+        const BjJamMode& m = bjModes[mode];
+
+        localHop++;
+        if (localHop >= m.count) localHop = 0;
+
+        uint8_t ch = m.channels[localHop];
+        nrf24Radio.setChannel(ch);  // Carrier stays ON, just hops frequency
+        delayMicroseconds(m.dwellUs);  // Adaptive dwell — all modes sweep at ~1.5ms
+
+        // Update shared state for display (volatile, races OK for display)
+        currentNRFChannel = ch;
+        hopIndex = localHop;
+        bjHitCount++;
+
+        // Feed watchdog on core 0 — yield every 100 hops
+        // Without this, the idle task starves and watchdog reboots the ESP32
+        yieldCounter++;
+        if (yieldCounter >= 100) {
+            yieldCounter = 0;
+            vTaskDelay(1);  // 1 tick (~1ms) — keeps WDT happy, 99% duty cycle
+        }
+    }
+
+    // Cleanup on THIS core — core 1 must NOT touch radio while task is alive
+    nrf24Radio.stopConstCarrier();
+    nrf24Radio.flush_tx();
+    nrf24Radio.powerDown();
+    SPI.end();
+
+    Serial.println("[BLEJAM] Core 0: Radio powered down, SPI released");
+    bjJamTaskDone = true;
+    vTaskDelete(NULL);
+}
 
 // Short display names for FreeMonoBold18pt (must fit 240px screen)
-static const char* BJ_MODE_DISPLAY[] = {"ALL CHAN", "ADV ONLY", "DATA ONLY"};
+static const char* BJ_MODE_DISPLAY[] = {"BLE", "BLE ADV", "BT FULL", "ADV KILL"};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SKULL ICONS (same set as WLAN/SubGHz Jammer)
@@ -3086,202 +3209,17 @@ static const unsigned char* bjIcons[BJ_ICON_NUM] = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// NRF24 RAW SPI FUNCTIONS (local copies - same proven code as WLAN Jammer)
-// These are static in nrf24_attacks.cpp so we duplicate them here
+// JAMMER ENGINE — Bruce firmware pattern (PROVEN ON AIRPODS)
+// startConstCarrier() ONCE → setChannel() in tight loop
+// DO NOT use raw SPI. DO NOT use data flooding. DO NOT clear REUSE_TX_PL.
+// The REUSE_TX_PL flag set by startConstCarrier() on P-variant chips is
+// what makes the chip continuously retransmit — it's the FEATURE, not a bug.
+// We wasted an entire day trying to "fix" this. Bruce proves it works.
 // ═══════════════════════════════════════════════════════════════════════════
 
-static byte bjNrfGetRegister(byte r) {
-    byte c;
-    digitalWrite(NRF24_CSN, LOW);
-    SPI.transfer(r & 0x1F);
-    c = SPI.transfer(0);
-    digitalWrite(NRF24_CSN, HIGH);
-    return c;
-}
-
-static void bjNrfSetRegister(byte r, byte v) {
-    digitalWrite(NRF24_CSN, LOW);
-    SPI.transfer((r & 0x1F) | 0x20);
-    SPI.transfer(v);
-    digitalWrite(NRF24_CSN, HIGH);
-}
-
-static void bjNrfSetChannel(uint8_t channel) {
-    bjNrfSetRegister(BJ_NRF_RF_CH, channel);
-}
-
-static void bjNrfPowerUp() {
-    bjNrfSetRegister(BJ_NRF_CONFIG, bjNrfGetRegister(BJ_NRF_CONFIG) | 0x02);
-    delayMicroseconds(130);
-}
-
-static void bjNrfPowerDown() {
-    bjNrfSetRegister(BJ_NRF_CONFIG, bjNrfGetRegister(BJ_NRF_CONFIG) & ~0x02);
-}
-
-static void bjNrfEnable() {
-    digitalWrite(NRF24_CE, HIGH);
-}
-
-static void bjNrfDisable() {
-    digitalWrite(NRF24_CE, LOW);
-}
-
-static void bjNrfSetTX() {
-    // PWR_UP=1, PRIM_RX=0 for TX mode
-    bjNrfSetRegister(BJ_NRF_CONFIG, (bjNrfGetRegister(BJ_NRF_CONFIG) | 0x02) & ~0x01);
-    delayMicroseconds(150);
-}
-
-static bool bjNrfInit() {
-    pinMode(NRF24_CE, OUTPUT);
-    pinMode(NRF24_CSN, OUTPUT);
-    digitalWrite(NRF24_CE, LOW);
-    digitalWrite(NRF24_CSN, HIGH);
-
-    // Deselect CC1101 and SD card to prevent SPI bus conflicts
-    pinMode(CC1101_CS, OUTPUT);
-    digitalWrite(CC1101_CS, HIGH);
-    pinMode(SD_CS, OUTPUT);
-    digitalWrite(SD_CS, HIGH);
-
-    // Reset and reinit SPI bus for NRF24
-    SPI.end();
-    SPI.begin(VSPI_SCK, VSPI_MISO, VSPI_MOSI);
-    SPI.setDataMode(SPI_MODE0);
-    SPI.setFrequency(10000000);
-    SPI.setBitOrder(MSBFIRST);
-
-    delay(5);
-
-    bjNrfDisable();
-    bjNrfPowerUp();
-    bjNrfSetRegister(BJ_NRF_EN_AA, 0x00);     // Disable auto-ack
-    bjNrfSetRegister(BJ_NRF_RF_SETUP, 0x0F);  // 2Mbps, max power
-
-    byte status = bjNrfGetRegister(BJ_NRF_STATUS);
-    return (status != 0x00 && status != 0xFF);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CARRIER WAVE CONTROL — matches RF24 library startConstCarrier() exactly
-// NRF24L01+ P-variant needs dummy payload + REUSE_TX_PL + CE toggle
-// Register 0x06 = 0x9F = CONT_WAVE + PLL_LOCK + 0dBm + 2Mbps + LNA
-// PA+LNA module amplifies 0dBm chip output to ~+20dBm (100mW)
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Write multi-byte register (TX_ADDR is 5 bytes)
-static void bjNrfWriteMulti(byte reg, const byte* data, byte len) {
-    digitalWrite(NRF24_CSN, LOW);
-    SPI.transfer((reg & 0x1F) | 0x20);
-    for (byte i = 0; i < len; i++) {
-        SPI.transfer(data[i]);
-    }
-    digitalWrite(NRF24_CSN, HIGH);
-}
-
-// Send SPI command (no register, just opcode)
-static void bjNrfCommand(byte cmd) {
-    digitalWrite(NRF24_CSN, LOW);
-    SPI.transfer(cmd);
-    digitalWrite(NRF24_CSN, HIGH);
-}
-
-static void bjStartCarrier(byte channel) {
-    // Step 1: TX mode, CE LOW (matches RF24::stopListening)
-    bjNrfDisable();
-    bjNrfSetTX();
-
-    // Step 2: Set CONT_WAVE + PLL_LOCK in RF_SETUP
-    // 0x9F = CONT_WAVE(7) + PLL_LOCK(4) + RF_DR_HIGH(3) + RF_PWR_MAX(2:1) + LNA(0)
-    bjNrfSetRegister(BJ_NRF_RF_SETUP, 0x9F);
-
-    // Step 3: Disable auto-ack and retries (required for P-variant CW)
-    bjNrfSetRegister(BJ_NRF_EN_AA, 0x00);
-    bjNrfSetRegister(BJ_NRF_SETUP_RETR, 0x00);
-
-    // Step 4: Load dummy payload (32 bytes of 0xFF) — P-variant needs this
-    byte dummy[32];
-    memset(dummy, 0xFF, 32);
-    bjNrfWriteMulti(BJ_NRF_TX_ADDR, dummy, 5);  // TX address = 0xFFFFFFFFFF
-    bjNrfCommand(BJ_NRF_FLUSH_TX);               // Flush TX FIFO
-    // Load 32-byte dummy payload (W_TX_PAYLOAD command)
-    digitalWrite(NRF24_CSN, LOW);
-    SPI.transfer(BJ_NRF_W_TX_PL);
-    for (byte i = 0; i < 32; i++) SPI.transfer(0xFF);
-    digitalWrite(NRF24_CSN, HIGH);
-
-    // Step 5: Disable CRC (clear EN_CRC bit 3 in CONFIG)
-    byte config = bjNrfGetRegister(BJ_NRF_CONFIG);
-    bjNrfSetRegister(BJ_NRF_CONFIG, config & ~0x08);
-
-    // Step 6: Set channel and enable
-    bjNrfSetChannel(channel);
-    bjNrfEnable();
-
-    // Step 7: 1ms settling delay (datasheet requirement for P-variant)
-    delay(1);
-
-    // Step 8: REUSE_TX_PL + CE toggle (starts continuous carrier)
-    bjNrfSetRegister(BJ_NRF_STATUS, 0x10);  // Clear MAX_RT flag
-    bjNrfCommand(BJ_NRF_REUSE_TX);          // Reuse TX payload
-    bjNrfDisable();                          // CE LOW
-    bjNrfEnable();                           // CE HIGH — starts carrier
-}
-
-static void bjStopCarrier() {
-    // Per RF24 datasheet: with CONT_WAVE + REUSE_TX_PL both set,
-    // the chip does NOT react to CE LOW. Must powerDown first.
-    bjNrfSetRegister(BJ_NRF_CONFIG, bjNrfGetRegister(BJ_NRF_CONFIG) & ~0x02);  // PWR_UP=0
-    delay(1);
-    bjNrfSetRegister(BJ_NRF_RF_SETUP, 0x0F);  // Clear CONT_WAVE + PLL_LOCK, normal mode + max power
-    bjNrfDisable();                             // CE LOW
-    bjNrfCommand(BJ_NRF_FLUSH_TX);             // Flush TX FIFO
-}
-
-// Helper: check if NRF channel is a BLE advertising channel
+// Helper: check if NRF channel is a BLE advertising channel (for equalizer display)
 static bool bjIsAdvChannel(int ch) {
     return (ch == 2 || ch == 26 || ch == 80);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// NOISE MODE TX FUNCTIONS
-// Instead of pure CW, blast random data packets for wideband interference
-// Some BLE receivers handle noise worse than CW (forces error processing)
-// ═══════════════════════════════════════════════════════════════════════════
-
-static void bjNrfFlushTx() {
-    digitalWrite(NRF24_CSN, LOW);
-    SPI.transfer(0xE1);  // FLUSH_TX command
-    digitalWrite(NRF24_CSN, HIGH);
-}
-
-static void bjNrfWriteTxPayload(const byte* data, byte len) {
-    digitalWrite(NRF24_CSN, LOW);
-    SPI.transfer(0xA0);  // W_TX_PAYLOAD command
-    for (byte i = 0; i < len; i++) {
-        SPI.transfer(data[i]);
-    }
-    digitalWrite(NRF24_CSN, HIGH);
-}
-
-static void bjNoiseBlast() {
-    // 3 back-to-back noise bursts per call for higher duty cycle
-    for (int burst = 0; burst < 3; burst++) {
-        // Generate 32-byte random noise payload
-        byte noise[32];
-        for (int i = 0; i < 32; i++) {
-            noise[i] = random(256);
-        }
-
-        // Write payload (no flush — don't abort in-flight packets)
-        bjNrfWriteTxPayload(noise, 32);
-
-        // Pulse CE to transmit — 50µs ensures preamble + sync word start
-        bjNrfEnable();
-        delayMicroseconds(50);
-        bjNrfDisable();
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3294,7 +3232,7 @@ static void drawIconBar() {
     for (int i = 0; i < BJ_ICON_NUM; i++) {
         uint16_t color = HALEHOUND_MAGENTA;
         if (i == 1 && jamming) color = HALEHOUND_HOTPINK;   // Toggle icon hot when jamming
-        if (i == 4 && noiseMode) color = HALEHOUND_HOTPINK; // Antenna icon hot when noise mode
+        if (i == 4 && jamming) color = HALEHOUND_HOTPINK;  // Antenna icon hot when jamming
         tft.drawBitmap(bjIconX[i], 20, bjIcons[i], BJ_ICON_SIZE, BJ_ICON_SIZE, color);
     }
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
@@ -3373,9 +3311,9 @@ static void drawBjMainUI() {
     tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(10, 140);
     tft.printf("CH:%03d", currentNRFChannel);
-    tft.setTextColor(noiseMode ? HALEHOUND_HOTPINK : HALEHOUND_VIOLET, TFT_BLACK);
+    tft.setTextColor(jamming ? HALEHOUND_HOTPINK : HALEHOUND_VIOLET, TFT_BLACK);
     tft.setCursor(80, 140);
-    tft.printf("JAM:%s", noiseMode ? "NOISE" : "CW");
+    tft.printf("CH#:%d", bjModes[currentMode].count);
     tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(170, 140);
     tft.printf("HITS:%d", bjHitCount);
@@ -3404,9 +3342,9 @@ static void bjUpdateStats() {
     tft.setCursor(10, 140);
     tft.printf("CH:%03d", currentNRFChannel);
     tft.fillRect(80, 140, 80, 10, TFT_BLACK);
-    tft.setTextColor(noiseMode ? HALEHOUND_HOTPINK : HALEHOUND_VIOLET, TFT_BLACK);
+    tft.setTextColor(jamming ? HALEHOUND_HOTPINK : HALEHOUND_VIOLET, TFT_BLACK);
     tft.setCursor(80, 140);
-    tft.printf("JAM:%s", noiseMode ? "NOISE" : "CW");
+    tft.printf("CH#:%d", bjModes[currentMode].count);
     tft.fillRect(170, 140, 70, 10, TFT_BLACK);
     tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setCursor(170, 140);
@@ -3431,8 +3369,8 @@ static void updateChannelHeat() {
         return;
     }
 
-    if (currentMode == BJ_MODE_ALL || currentMode == BJ_MODE_DATA) {
-        // ALL/DATA modes - full band hopping, insane equalizer
+    if (currentMode == BJ_MODE_BLE || currentMode == BJ_MODE_BT) {
+        // BLE/BT modes - band hopping, insane equalizer
         for (int i = 0; i < BJ_NUM_BARS; i++) {
             int dist = abs(i - currentNRFChannel);
 
@@ -3450,7 +3388,7 @@ static void updateChannelHeat() {
             }
         }
     } else {
-        // ADV ONLY mode - focused attack on 3 channels
+        // BLE ADV mode - focused attack on advertising channels
         for (int i = 0; i < BJ_NUM_BARS; i++) {
             bool isCurrentChannel = (i == currentNRFChannel);
 
@@ -3680,160 +3618,66 @@ static void drawSkulls() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void startJamming() {
-    // Verify NRF24 is alive
-    byte status = bjNrfGetRegister(BJ_NRF_STATUS);
-    if (status == 0x00 || status == 0xFF) {
-        bjNrfDisable();
-        bjNrfPowerUp();
-        bjNrfSetRegister(BJ_NRF_EN_AA, 0x00);
-        bjNrfSetRegister(BJ_NRF_RF_SETUP, 0x0F);
+    // ═══════════════════════════════════════════════════════════════════════
+    // DUAL-CORE CONTINUOUS WAVE JAMMER
+    // Core 0: FreeRTOS task owns ALL SPI + NRF24. startConstCarrier() for
+    //         100% duty cycle continuous wave, setChannel() for tight hopping.
+    // Core 1: Display animations at full speed (separate HSPI bus).
+    // Core 1 NEVER touches NRF24 while jam task is running.
+    // ═══════════════════════════════════════════════════════════════════════
 
-        status = bjNrfGetRegister(BJ_NRF_STATUS);
-        if (status == 0x00 || status == 0xFF) {
-            tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
-            tft.setCursor(10, 150);
-            tft.print("ERROR: NRF24 not responding!");
-            return;
-        }
-    }
-
-    // Set initial channel based on mode
-    if (currentMode == BJ_MODE_ADV) {
-        advChannelIndex = 0;
-        currentNRFChannel = BJ_ADV_CHANNELS[0];
-    } else {
-        currentNRFChannel = BJ_BT_NRF_START;
-        // In DATA mode, skip ADV channel 2 -> start at 3
-        if (currentMode == BJ_MODE_DATA && bjIsAdvChannel(currentNRFChannel)) {
-            currentNRFChannel++;
-        }
-    }
-
-    if (noiseMode) {
-        // NOISE MODE - normal TX, blast random data packets
-        bjNrfSetTX();
-        bjNrfSetChannel(currentNRFChannel);
-        bjNrfSetRegister(BJ_NRF_RF_SETUP, 0x0F);  // Normal: 2Mbps + max power, NO CW
-    } else {
-        // CARRIER MODE - continuous carrier wave
-        bjStartCarrier(currentNRFChannel);
-    }
-
-    jamming = true;
+    // Set shared state BEFORE launching task
+    hopIndex = 0;
+    currentNRFChannel = bjModes[currentMode].channels[0];
     bjHitCount = 0;
-    lastHopTime = micros();
+    bjJamMode = currentMode;
+    bjJamTaskDone = false;
+    jamming = true;
 
-    #if CYD_DEBUG
-    Serial.printf("[BLEJAM] Started - Mode: %s, Jam: %s, Ch: %d\n",
-                  BJ_MODE_NAMES[currentMode], noiseMode ? "NOISE" : "CARRIER", currentNRFChannel);
-    #endif
+    // Launch jam task on core 0 — task handles ALL SPI/radio init on that core
+    bjJamTaskRunning = true;
+    xTaskCreatePinnedToCore(bjJamTask, "BleJam", 8192, NULL, 1, &bjJamTaskHandle, 0);
+
+    Serial.printf("[BLEJAM] DUAL-CORE Started - Mode: %s, Channels: %d, Core0 task launched\n",
+                  BJ_MODE_NAMES[currentMode], bjModes[currentMode].count);
 }
 
 static void stopJamming() {
-    if (!noiseMode) {
-        // CW mode: must use proper shutdown (CE LOW ignored with CONT_WAVE + REUSE_TX_PL)
-        bjStopCarrier();
-    } else {
-        // Noise mode: normal shutdown
-        bjNrfDisable();
-        bjNrfSetRegister(BJ_NRF_RF_SETUP, 0x0F);
-        bjNrfPowerDown();
+    // Signal jam task to stop — task does its own radio cleanup on core 0
+    bjJamTaskRunning = false;
+
+    // Wait for task to finish cleanup (it powers down radio + releases SPI)
+    if (bjJamTaskHandle) {
+        unsigned long waitStart = millis();
+        while (!bjJamTaskDone && (millis() - waitStart < 500)) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+        bjJamTaskHandle = NULL;
     }
+
+    // Re-init SPI on core 1 for other modules (scanner, mousejacker, etc.)
+    delay(2);
+    SPI.begin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, NRF24_CSN);
+    nrf24Radio.begin();
+    nrf24Radio.setPALevel(RF24_PA_MAX);
+    nrf24Radio.setDataRate(RF24_2MBPS);
+    nrf24Radio.setAutoAck(false);
+    nrf24Radio.disableCRC();
+
     jamming = false;
-
-    #if CYD_DEBUG
-    Serial.println("[BLEJAM] Stopped");
-    #endif
-}
-
-static void hopChannel() {
-    if (!jamming) return;
-
-    switch (currentMode) {
-        case BJ_MODE_ALL:
-            // Hop through ALL BT channels (NRF 2-80)
-            currentNRFChannel++;
-            if (currentNRFChannel > BJ_BT_NRF_END) {
-                currentNRFChannel = BJ_BT_NRF_START;
-            }
-            break;
-
-        case BJ_MODE_ADV:
-            // Cycle through 3 ADV channels only (~667 hits/sec each
-            advChannelIndex = (advChannelIndex + 1) % BJ_ADV_COUNT;
-            currentNRFChannel = BJ_ADV_CHANNELS[advChannelIndex];
-            break;
-
-        case BJ_MODE_DATA:
-            // Hop NRF 2-80 but skip ADV channels (2, 26, 80)
-            do {
-                currentNRFChannel++;
-                if (currentNRFChannel > BJ_BT_NRF_END) {
-                    currentNRFChannel = BJ_BT_NRF_START;
-                }
-            } while (bjIsAdvChannel(currentNRFChannel));
-            break;
-    }
-
-    bjNrfSetChannel(currentNRFChannel);
+    Serial.println("[BLEJAM] Stopped — core 0 task terminated, SPI restored to core 1");
 }
 
 static void nextMode() {
     currentMode = (currentMode + 1) % BJ_MODE_COUNT;
-    if (jamming) {
-        // Reset channel position for new mode
-        if (currentMode == BJ_MODE_ADV) {
-            advChannelIndex = 0;
-            currentNRFChannel = BJ_ADV_CHANNELS[0];
-        } else {
-            currentNRFChannel = BJ_BT_NRF_START;
-            if (currentMode == BJ_MODE_DATA && bjIsAdvChannel(currentNRFChannel)) {
-                currentNRFChannel++;
-            }
-        }
-        bjNrfSetChannel(currentNRFChannel);
-    }
+    hopIndex = 0;
+    bjJamMode = currentMode;  // sync to jam task (volatile, task picks up next iteration)
 }
 
 static void prevMode() {
     currentMode = (currentMode - 1 + BJ_MODE_COUNT) % BJ_MODE_COUNT;
-    if (jamming) {
-        if (currentMode == BJ_MODE_ADV) {
-            advChannelIndex = 0;
-            currentNRFChannel = BJ_ADV_CHANNELS[0];
-        } else {
-            currentNRFChannel = BJ_BT_NRF_START;
-            if (currentMode == BJ_MODE_DATA && bjIsAdvChannel(currentNRFChannel)) {
-                currentNRFChannel++;
-            }
-        }
-        bjNrfSetChannel(currentNRFChannel);
-    }
-}
-
-static void toggleNoiseMode() {
-    noiseMode = !noiseMode;
-    if (jamming) {
-        if (noiseMode) {
-            // Switching CW → NOISE: must stop carrier properly first
-            // Per datasheet: CONT_WAVE + REUSE_TX_PL = CE LOW ignored
-            // Must powerDown, clear bits, then re-enable for normal TX
-            bjStopCarrier();                                // powerDown + clear CONT_WAVE + flush
-            delay(1);
-            bjNrfPowerUp();                                 // PWR_UP=1
-            bjNrfSetRegister(BJ_NRF_RF_SETUP, 0x0F);       // Normal: 2Mbps + max power + LNA
-            bjNrfSetRegister(BJ_NRF_CONFIG,
-                (bjNrfGetRegister(BJ_NRF_CONFIG) | 0x02) & ~0x01);  // PWR_UP=1, PRIM_RX=0
-            delayMicroseconds(150);
-        } else {
-            // Switching NOISE → CW: full carrier init on current channel
-            bjStartCarrier(currentNRFChannel);
-        }
-    }
-
-    #if CYD_DEBUG
-    Serial.printf("[BLEJAM] Jam mode: %s\n", noiseMode ? "NOISE" : "CARRIER");
-    #endif
+    hopIndex = 0;
+    bjJamMode = currentMode;  // sync to jam task
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3843,10 +3687,9 @@ static void toggleNoiseMode() {
 void setup() {
     exitRequested = false;
     jamming = false;
-    noiseMode = false;
-    currentMode = BJ_MODE_ALL;
+    currentMode = BJ_MODE_BLE;    // Default BLE — kills connected AirPods/speakers
     currentNRFChannel = BJ_BT_NRF_START;
-    advChannelIndex = 0;
+    hopIndex = 0;
     skullFrame = 0;
     bjHitCount = 0;
     memset(channelHeat, 0, sizeof(channelHeat));
@@ -3859,16 +3702,28 @@ void setup() {
     Serial.println("[BLEJAM] Initializing BLE Jammer...");
     #endif
 
-    if (!bjNrfInit()) {
+    nrf24ClaimSPI();
+    if (!nrf24Radio.begin()) {
         tft.setTextColor(HALEHOUND_HOTPINK);
         tft.setTextSize(2);
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
         drawCenteredText(130, "Check wiring:", HALEHOUND_MAGENTA, 1);
-        drawCenteredText(145, "CE=GPIO16 CSN=GPIO4", HALEHOUND_MAGENTA, 1);
+        drawCenteredText(145, ("CE=GPIO" + String(NRF24_CE) + " CSN=GPIO" + String(NRF24_CSN)).c_str(), HALEHOUND_MAGENTA, 1);
         initialized = false;
         return;
     }
+
+    // Max power, 2Mbps, no auto-ack, no CRC — maximum aggression
+    nrf24Radio.setPALevel(RF24_PA_MAX);
+    nrf24Radio.setDataRate(RF24_2MBPS);
+    nrf24Radio.setAutoAck(false);
+    nrf24Radio.disableCRC();
+
+    Serial.printf("[BLEJAM] NRF24 INIT OK - isPVariant: %d, chipConnected: %d\n",
+                  nrf24Radio.isPVariant(), nrf24Radio.isChipConnected());
+    Serial.printf("[BLEJAM] CE=GPIO%d, CSN=GPIO%d, SPI: SCK=%d MISO=%d MOSI=%d\n",
+                  NRF24_CE, NRF24_CSN, RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI);
 
     drawBjMainUI();
     drawJammerDisplay();
@@ -3935,11 +3790,8 @@ void loop() {
                 drawBjMainUI();
                 return;
             }
-            // Antenna icon (x=180) - toggle CARRIER/NOISE
+            // Antenna icon (x=180) - visual indicator only
             else if (tx >= 170 && tx <= 200) {
-                toggleNoiseMode();
-                drawIconBar();
-                drawBjMainUI();
                 return;
             }
             // Cycle mode icon at right edge
@@ -3959,25 +3811,19 @@ void loop() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // CHANNEL HOPPING (500µs = 2000 hops/sec)
+    // JAMMING ENGINE — RUNS ON CORE 0 (FreeRTOS task)
+    // The jam task (bjJamTask) handles all NRF24 operations on core 0
+    // using VSPI. Display runs here on core 1 using HSPI. Zero conflict.
+    // No burst/pause pattern needed — jammer is 100% duty cycle.
     // ═══════════════════════════════════════════════════════════════════════
-    if (jamming) {
-        if (micros() - lastHopTime >= HOP_DELAY_US) {
-            hopChannel();
-            bjHitCount++;
-            lastHopTime = micros();
-        }
-
-        // Noise mode: blast random data packets alongside hopping
-        if (noiseMode) {
-            bjNoiseBlast();
-        }
-    }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // DISPLAY UPDATE (~12fps = 80ms throttle)
+    // DISPLAY UPDATE — Full animations ALL the time!
+    // Jammer runs on core 0 with its own SPI bus. Display doesn't affect it.
+    // Equalizer, skulls, stats — everything runs at full speed.
     // ═══════════════════════════════════════════════════════════════════════
-    if (millis() - lastDisplayTime >= 30) {
+    unsigned long displayInterval = jamming ? 80 : 30;
+    if (millis() - lastDisplayTime >= displayInterval) {
         bjUpdateStats();
         drawJammerDisplay();
         drawSkulls();
@@ -3994,15 +3840,18 @@ bool isExitRequested() {
 }
 
 void cleanup() {
-    if (jamming) {
+    // Kill jam task on core 0 first
+    if (jamming || bjJamTaskRunning) {
         stopJamming();
     }
-    bjNrfPowerDown();
+    nrf24Radio.powerDown();
+    delay(2);
+    nrf24ReleaseSPI();
     initialized = false;
     exitRequested = false;
 
     #if CYD_DEBUG
-    Serial.println("[BLEJAM] Cleanup complete");
+    Serial.println("[BLEJAM] Cleanup complete — core 0 task terminated");
     #endif
 }
 
