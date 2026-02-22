@@ -15,6 +15,22 @@
 //#define CYD_35    // ESP32-3248S035 - 3.5" 480x320 ST7796
 
 // ═══════════════════════════════════════════════════════════════════════════
+// FIRMWARE VERSION — single source of truth
+// ═══════════════════════════════════════════════════════════════════════════
+
+#define FW_VERSION "v2.8.0"
+
+#ifdef NMRF_HAT
+  #define FW_EDITION   "CYD-HAT Edition"
+  #define FW_DEVICE    "HaleHound-CYD-HAT"
+#else
+  #define FW_EDITION   "CYD Edition"
+  #define FW_DEVICE    "HaleHound-CYD"
+#endif
+
+#define FW_FULL_VERSION FW_VERSION " " FW_EDITION
+
+// ═══════════════════════════════════════════════════════════════════════════
 // BOARD-SPECIFIC SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════
 

@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // HaleHound-CYD Main Firmware
 // ESP32 Cheap Yellow Display Edition
-// Matches ESP32-DIV HaleHound v2.7.0 EXACTLY
+// v2.8.0 — Dual-core jammer engine, CYD/CYD-HAT edition separation
 // Created: 2026-02-06
 // ═══════════════════════════════════════════════════════════════════════════
 //
@@ -1857,9 +1857,9 @@ void displayDeviceInfo() {
     tft.setTextSize(1);
     int y = 75;
 
-    tft.setCursor(10, y); tft.print("Device: HaleHound-CYD");
+    tft.setCursor(10, y); tft.print("Device: " FW_DEVICE);
     y += 18;
-    tft.setCursor(10, y); tft.print("Version: v2.7.0 CYD Edition");
+    tft.setCursor(10, y); tft.print("Version: " FW_FULL_VERSION);
     y += 18;
     tft.setCursor(10, y); tft.print("By: HaleHound (JMFH)");
     y += 18;
@@ -1911,9 +1911,9 @@ void displayDeviceInfo() {
                 tft.setTextColor(HALEHOUND_MAGENTA);
                 tft.setTextSize(1);
                 y = 75;
-                tft.setCursor(10, y); tft.print("Device: HaleHound-CYD");
+                tft.setCursor(10, y); tft.print("Device: " FW_DEVICE);
                 y += 18;
-                tft.setCursor(10, y); tft.print("Version: v2.7.0 CYD Edition");
+                tft.setCursor(10, y); tft.print("Version: " FW_FULL_VERSION);
                 y += 18;
                 tft.setCursor(10, y); tft.print("By: HaleHound (JMFH)");
                 y += 18;
@@ -2019,11 +2019,11 @@ void handleAboutPage() {
     // Glitch title — chromatic aberration effect
     drawGlitchTitle(58, "HALEHOUND");
 
-    // Subtitle
-    drawGlitchStatus(80, "CYD Edition", HALEHOUND_MAGENTA);
+    // Subtitle — shows CYD or CYD-HAT
+    drawGlitchStatus(80, FW_EDITION, HALEHOUND_MAGENTA);
 
     // Version centered
-    drawCenteredText(90, "v2.7.0", HALEHOUND_VIOLET, 1);
+    drawCenteredText(90, FW_VERSION, HALEHOUND_VIOLET, 1);
 
     // Separator
     tft.drawLine(20, 100, SCREEN_WIDTH - 20, 100, HALEHOUND_VIOLET);
@@ -2188,12 +2188,12 @@ void showSplash() {
     // Title — glitch effect
     drawGlitchTitle(80, "HALEHOUND");
 
-    // Subtitle
-    drawGlitchStatus(110, "CYD Edition", HALEHOUND_MAGENTA);
+    // Subtitle — shows CYD or CYD-HAT so user knows which firmware they flashed
+    drawGlitchStatus(110, FW_EDITION, HALEHOUND_MAGENTA);
 
     // Version
     tft.setTextSize(1);
-    drawCenteredText(130, "v2.7.0", HALEHOUND_HOTPINK, 1);
+    drawCenteredText(130, FW_VERSION, HALEHOUND_HOTPINK, 1);
 
     // Board info
     drawCenteredText(140, CYD_BOARD_NAME, HALEHOUND_HOTPINK, 1);
@@ -2402,7 +2402,7 @@ void setup() {
 
     Serial.println();
     Serial.println("===============================================");
-    Serial.println("        HALEHOUND-CYD FIRMWARE v2.7.0");
+    Serial.println("        " FW_DEVICE " " FW_VERSION);
     Serial.println("        " CYD_BOARD_NAME);
     Serial.println("===============================================");
     Serial.println();
@@ -2427,6 +2427,65 @@ void setup() {
     // SPI bus manager
     spiManagerSetup();
     Serial.println("[INIT] SPI Manager OK");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // WRONG FIRMWARE DETECTION — catch CYD-HAT firmware on standard CYD
+    // or standard CYD firmware on a hat board BEFORE they waste time debugging
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+        SPI.begin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, NRF24_CSN);
+        nrf24Radio.begin();
+        bool nrfFound = nrf24Radio.isChipConnected();
+
+        if (!nrfFound) {
+            // NRF24 not responding on compiled pin config — likely wrong firmware
+            Serial.println("[INIT] WARNING: NRF24 not found on compiled pins!");
+            Serial.printf("[INIT] Compiled for: %s (CE=%d, CSN=%d)\n", FW_DEVICE, NRF24_CE, NRF24_CSN);
+
+            tft.fillScreen(TFT_BLACK);
+            tft.drawRect(5, 5, SCREEN_WIDTH - 10, SCREEN_HEIGHT - 10, HALEHOUND_HOTPINK);
+            tft.drawRect(7, 7, SCREEN_WIDTH - 14, SCREEN_HEIGHT - 14, HALEHOUND_HOTPINK);
+
+            drawGlitchTitle(60, "WARNING");
+
+            tft.setTextSize(1);
+            drawCenteredText(80, "NRF24 NOT DETECTED", HALEHOUND_HOTPINK, 1);
+            drawCenteredText(100, "You may have flashed the", HALEHOUND_MAGENTA, 1);
+            drawCenteredText(115, "WRONG FIRMWARE", HALEHOUND_HOTPINK, 1);
+
+            tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
+            tft.setCursor(15, 140);
+            tft.printf("This build: %s", FW_EDITION);
+            tft.setCursor(15, 158);
+            tft.printf("Expects: CE=%d CSN=%d", NRF24_CE, NRF24_CSN);
+
+            #ifdef NMRF_HAT
+            drawCenteredText(185, "If you DON'T have the", HALEHOUND_MAGENTA, 1);
+            drawCenteredText(200, "NM-RF-Hat, flash the", HALEHOUND_MAGENTA, 1);
+            drawCenteredText(215, "standard CYD firmware", HALEHOUND_HOTPINK, 1);
+            #else
+            drawCenteredText(185, "If you HAVE the NM-RF-Hat", HALEHOUND_MAGENTA, 1);
+            drawCenteredText(200, "flash the CYD-HAT firmware", HALEHOUND_HOTPINK, 1);
+            drawCenteredText(215, "Check hat switch position", HALEHOUND_MAGENTA, 1);
+            #endif
+
+            drawCenteredText(245, "Touch screen to continue", HALEHOUND_GUNMETAL, 1);
+            drawCenteredText(260, "(NRF24 features won't work)", HALEHOUND_GUNMETAL, 1);
+
+            // Wait for touch to continue — don't brick the device, just warn
+            while (true) {
+                uint16_t wx, wy;
+                if (getTouchPoint(&wx, &wy)) break;
+                if (Serial.available()) break;
+                delay(50);
+            }
+            // Brief debounce
+            delay(300);
+
+            // Re-show splash and continue boot
+            showSplash();
+        }
+    }
 
     // Boot diagnostics disabled for normal boot — function kept for second board debugging
     // runBootDiagnostics();
