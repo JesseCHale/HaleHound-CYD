@@ -1089,21 +1089,92 @@ static const uint8_t WIFI_CH_CENTER[] = {12, 17, 22, 27, 32, 37, 42, 47, 52, 57,
 #define JAM_SKULL_Y 250
 #define JAM_SKULL_NUM 8
 
-static bool jammerActive = false;
+static volatile bool jammerActive = false;
 static int currentWiFiChannel = ALL_CHANNELS_MODE;
-static int currentNRFChannel = 0;
-static unsigned long lastHopTime = 0;
+static volatile int currentNRFChannel = 0;
 static unsigned long lastDisplayTime = 0;
-static unsigned long lastScanTime = 0;
 static bool exitRequested = false;
 static bool uiInitialized = false;
 
 static const int HOP_DELAY_US = 500;
-static const int SCAN_INTERVAL_MS = 2000;
 
 static uint8_t signalLevels[13] = {0};
 static int jamSkullFrame = 0;
 static uint8_t channelHeat[JAM_NUM_BARS] = {0};  // Heat level for each NRF channel - EQUALIZER MODE!
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE JAMMER — FreeRTOS task on Core 0
+// Same architecture as BLE Jammer & ProtoKill
+// ═══════════════════════════════════════════════════════════════════════════
+static TaskHandle_t wlanJamTaskHandle = NULL;
+static volatile bool wlanJamTaskRunning = false;
+static volatile bool wlanJamTaskDone = false;
+static volatile int wlanJamChannel = ALL_CHANNELS_MODE;  // shadow of currentWiFiChannel
+
+static void wlanJamTask(void* param) {
+    // ALL SPI + NRF24 operations on core 0
+    SPI.end();
+    delay(2);
+    SPI.begin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, NRF24_CSN);
+    delay(5);
+
+    if (!nrf24Radio.begin()) {
+        Serial.println("[WLANJAMMER] Core 0: NRF24 begin() FAILED");
+        wlanJamTaskDone = true;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // startConstCarrier — continuous wave, 100% duty cycle
+    nrf24Radio.stopListening();
+    nrf24Radio.setPALevel(RF24_PA_MAX);
+    nrf24Radio.startConstCarrier(RF24_PA_MAX, 50);
+    nrf24Radio.setAddressWidth(5);
+    nrf24Radio.setPayloadSize(2);
+    nrf24Radio.setDataRate(RF24_2MBPS);
+
+    Serial.printf("[WLANJAMMER] Core 0: CW carrier active, isPVariant=%d\n",
+                  nrf24Radio.isPVariant());
+
+    int localHop = 1;
+    int yieldCounter = 0;
+
+    while (wlanJamTaskRunning) {
+        int wifiCh = wlanJamChannel;
+
+        localHop++;
+        if (wifiCh == ALL_CHANNELS_MODE) {
+            if (localHop > 83) localHop = 1;
+        } else {
+            if (localHop > WIFI_CH_END[wifiCh - 1] || localHop < WIFI_CH_START[wifiCh - 1]) {
+                localHop = WIFI_CH_START[wifiCh - 1];
+            }
+        }
+
+        nrf24Radio.setChannel(localHop);
+        delayMicroseconds(HOP_DELAY_US);
+
+        // Update shared state for display
+        currentNRFChannel = localHop;
+
+        // Feed watchdog
+        yieldCounter++;
+        if (yieldCounter >= 100) {
+            yieldCounter = 0;
+            vTaskDelay(1);
+        }
+    }
+
+    // Cleanup on core 0
+    nrf24Radio.stopConstCarrier();
+    nrf24Radio.flush_tx();
+    nrf24Radio.powerDown();
+    SPI.end();
+
+    Serial.println("[WLANJAMMER] Core 0: Radio powered down, SPI released");
+    wlanJamTaskDone = true;
+    vTaskDelete(NULL);
+}
 
 // Skull icons for jammer display
 static const unsigned char* jamSkulls[] = {
@@ -1177,17 +1248,7 @@ static int processJamIconAnim() {
     return -1;
 }
 
-static void wlanStartCarrier(byte channel) {
-    nrfSetTX();                      // Switch to TX mode first!
-    nrfSetChannel(channel);
-    nrfSetRegister(0x06, 0x9E);      // CONT_WAVE + PLL_LOCK + 0dBm + 2Mbps
-    nrfEnable();
-}
-
-static void wlanStopCarrier() {
-    nrfDisable();
-    nrfSetRegister(0x06, 0x0F);  // Normal mode
-}
+// Old raw SPI functions removed — dual-core task handles all radio ops on core 0
 
 static void drawHeader() {
     tft.fillRect(0, 40, SCREEN_WIDTH, 50, TFT_BLACK);
@@ -1461,59 +1522,30 @@ static void drawJammerSkulls() {
 }
 
 static void startJamming() {
-    byte status = nrfGetRegister(0x07);
-    if (status == 0x00 || status == 0xFF) {
-        nrfDisable();
-        nrfPowerUp();
-        nrfSetRegister(0x01, 0x0);
-        nrfSetRegister(0x06, 0x0F);
-
-        status = nrfGetRegister(0x07);
-        if (status == 0x00 || status == 0xFF) {
-            tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
-            tft.setCursor(10, 150);
-            tft.print("ERROR: NRF24 not found!");
-            return;
-        }
-    }
-
-    if (currentWiFiChannel == ALL_CHANNELS_MODE) {
-        currentNRFChannel = WIFI_CH_START[0];
-    } else {
-        currentNRFChannel = WIFI_CH_START[currentWiFiChannel - 1];
-    }
-
-    wlanStartCarrier(currentNRFChannel);
+    wlanJamChannel = currentWiFiChannel;
+    wlanJamTaskDone = false;
     jammerActive = true;
-    lastHopTime = micros();
+
+    wlanJamTaskRunning = true;
+    xTaskCreatePinnedToCore(wlanJamTask, "WLANJam", 8192, NULL, 1, &wlanJamTaskHandle, 0);
+
+    Serial.printf("[WLANJAMMER] DUAL-CORE Started - WiFi Ch: %s, Core0 task launched\n",
+                  currentWiFiChannel == ALL_CHANNELS_MODE ? "ALL" : String(currentWiFiChannel).c_str());
 }
 
 static void stopJamming() {
-    wlanStopCarrier();
-    nrfPowerDown();
-    jammerActive = false;
-}
+    wlanJamTaskRunning = false;
 
-static void hopChannel() {
-    if (!jammerActive) return;
-
-    if (currentWiFiChannel == ALL_CHANNELS_MODE) {
-        currentNRFChannel++;
-        if (currentNRFChannel > 83) {
-            currentNRFChannel = 1;
+    if (wlanJamTaskHandle) {
+        unsigned long waitStart = millis();
+        while (!wlanJamTaskDone && (millis() - waitStart < 500)) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
         }
-    } else {
-        currentNRFChannel++;
-        if (currentNRFChannel > WIFI_CH_END[currentWiFiChannel - 1]) {
-            currentNRFChannel = WIFI_CH_START[currentWiFiChannel - 1];
-        }
+        wlanJamTaskHandle = NULL;
     }
 
-    // Must toggle CE to force PLL retune during CONT_WAVE!
-    // Just writing RF_CH does NOT retune the PLL — carrier stays on old freq
-    nrfDisable();                     // CE LOW
-    nrfSetChannel(currentNRFChannel);
-    nrfEnable();                      // CE HIGH — PLL locks on new frequency
+    jammerActive = false;
+    Serial.println("[WLANJAMMER] Stopped — core 0 task terminated");
 }
 
 void wlanjammerSetup() {
@@ -1530,7 +1562,10 @@ void wlanjammerSetup() {
     drawStatusBar();
     drawJamIconBar();
 
-    if (!nrfInit()) {
+    // Quick check that NRF24 is present (jam task does full init on core 0)
+    SPI.begin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, NRF24_CSN);
+    nrf24Radio.begin();
+    if (!nrf24Radio.isChipConnected()) {
         tft.setTextColor(HALEHOUND_HOTPINK);
         tft.setTextSize(2);
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
@@ -1549,7 +1584,6 @@ void wlanjammerSetup() {
     drawJammerSkulls();
 
     lastDisplayTime = millis();
-    lastScanTime = millis();
     uiInitialized = true;
 
     #if CYD_DEBUG
@@ -1596,10 +1630,7 @@ void wlanjammerLoop() {
                 delay(200);
                 currentWiFiChannel++;
                 if (currentWiFiChannel > 13) currentWiFiChannel = ALL_CHANNELS_MODE;
-                if (jammerActive) {
-                    if (currentWiFiChannel == ALL_CHANNELS_MODE) currentNRFChannel = 1;
-                    else currentNRFChannel = WIFI_CH_START[currentWiFiChannel - 1];
-                }
+                wlanJamChannel = currentWiFiChannel;  // sync to jam task
                 drawHeader();
                 drawChannelDisplay();
                 return;
@@ -1613,13 +1644,10 @@ void wlanjammerLoop() {
         return;
     }
 
-    // Rapid channel hopping
-    if (jammerActive) {
-        if (micros() - lastHopTime >= HOP_DELAY_US) {
-            hopChannel();
-            lastHopTime = micros();
-        }
-    }
+    // ═══════════════════════════════════════════════════════════════════════
+    // JAMMING ENGINE RUNS ON CORE 0 — display runs here on core 1
+    // Full equalizer + skulls at full speed, zero impact on jamming
+    // ═══════════════════════════════════════════════════════════════════════
 
     // Update display
     if (millis() - lastDisplayTime >= 80) {
@@ -1634,12 +1662,11 @@ bool isExitRequested() {
 }
 
 void cleanup() {
-    if (jammerActive) {
+    if (jammerActive || wlanJamTaskRunning) {
         stopJamming();
     }
     exitRequested = false;
     uiInitialized = false;
-    nrfPowerDown();
 }
 
 }  // namespace WLANJammer
