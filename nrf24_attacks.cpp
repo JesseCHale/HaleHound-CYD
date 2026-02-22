@@ -16,6 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "nrf24_attacks.h"
+#include "nrf24_config.h"
 #include "shared.h"
 #include "touch_buttons.h"
 #include "utils.h"
@@ -1662,7 +1663,7 @@ enum OperationMode {
 };
 
 static OperationMode currentMode = WiFi_MODULE;
-static bool jammerActive = false;
+static volatile bool jammerActive = false;
 static bool exitRequested = false;
 static bool uiInitialized = false;
 
@@ -1679,6 +1680,132 @@ static const byte videoTransmitter_channels[] = {70, 75, 80};
 static const byte rc_channels[] = {10, 30, 50, 70};
 static const byte zigbee_channels[] = {5, 25, 50, 75};
 static const byte nrf24_channels[] = {76, 78, 79};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADAPTIVE DWELL — same pattern as BLE Jammer
+// Target ~1.5ms sweep regardless of channel count
+// ═══════════════════════════════════════════════════════════════════════════
+struct PkJamMode {
+    const byte* channels;
+    int count;
+    int dwellUs;
+};
+static const PkJamMode pkModes[] = {
+    {ble_channels,              3, 500},   //  3ch × 500us = 1.50ms
+    {bluetooth_channels,       21,  71},   // 21ch ×  71us = 1.49ms
+    {WiFi_channels,            15, 100},   // 15ch × 100us = 1.50ms
+    {videoTransmitter_channels, 3, 500},   //  3ch × 500us = 1.50ms
+    {rc_channels,               4, 375},   //  4ch × 375us = 1.50ms
+    {usbWireless_channels,      3, 500},   //  3ch × 500us = 1.50ms
+    {zigbee_channels,           4, 375},   //  4ch × 375us = 1.50ms
+    {nrf24_channels,            3, 500}    //  3ch × 500us = 1.50ms
+};
+
+// Forward declaration (defined later in UI section)
+static const char* getModeString(OperationMode mode);
+
+// Shared state — written by jam task on core 0, read by display on core 1
+static volatile int pkCurrentChannel = 0;
+static volatile int pkHitCount = 0;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE JAMMER — FreeRTOS task on Core 0
+// Same architecture as BLE Jammer: NRF24 on VSPI (core 0), display on HSPI (core 1)
+// ═══════════════════════════════════════════════════════════════════════════
+static TaskHandle_t pkJamTaskHandle = NULL;
+static volatile bool pkJamTaskRunning = false;
+static volatile bool pkJamTaskDone = false;
+static volatile int pkJamModeIndex = 2;  // shadow of currentMode for jam task
+
+static void pkJamTask(void* param) {
+    // ALL SPI + NRF24 operations on core 0
+    SPI.end();
+    delay(2);
+    SPI.begin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, NRF24_CSN);
+    delay(5);
+
+    if (!nrf24Radio.begin()) {
+        Serial.println("[PROTOKILL] Core 0: NRF24 begin() FAILED");
+        pkJamTaskDone = true;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // startConstCarrier — continuous wave, 100% duty cycle
+    nrf24Radio.stopListening();
+    nrf24Radio.setPALevel(RF24_PA_MAX);
+    nrf24Radio.startConstCarrier(RF24_PA_MAX, 50);
+    nrf24Radio.setAddressWidth(5);
+    nrf24Radio.setPayloadSize(2);
+    nrf24Radio.setDataRate(RF24_2MBPS);
+
+    Serial.printf("[PROTOKILL] Core 0: CW carrier active, isPVariant=%d\n",
+                  nrf24Radio.isPVariant());
+
+    int localHop = 0;
+    int yieldCounter = 0;
+
+    while (pkJamTaskRunning) {
+        int modeIdx = pkJamModeIndex;
+        const PkJamMode& m = pkModes[modeIdx];
+
+        localHop++;
+        if (localHop >= m.count) localHop = 0;
+
+        uint8_t ch = m.channels[localHop];
+        nrf24Radio.setChannel(ch);
+        delayMicroseconds(m.dwellUs);
+
+        // Update shared state for display
+        pkCurrentChannel = ch;
+        pkHitCount++;
+
+        // Feed watchdog
+        yieldCounter++;
+        if (yieldCounter >= 100) {
+            yieldCounter = 0;
+            vTaskDelay(1);
+        }
+    }
+
+    // Cleanup on core 0
+    nrf24Radio.stopConstCarrier();
+    nrf24Radio.flush_tx();
+    nrf24Radio.powerDown();
+    SPI.end();
+
+    Serial.println("[PROTOKILL] Core 0: Radio powered down, SPI released");
+    pkJamTaskDone = true;
+    vTaskDelete(NULL);
+}
+
+static void pkStartJamming() {
+    pkHitCount = 0;
+    pkJamModeIndex = (int)currentMode;
+    pkJamTaskDone = false;
+    jammerActive = true;
+
+    pkJamTaskRunning = true;
+    xTaskCreatePinnedToCore(pkJamTask, "ProtoKill", 8192, NULL, 1, &pkJamTaskHandle, 0);
+
+    Serial.printf("[PROTOKILL] DUAL-CORE Started - Mode: %s, Core0 task launched\n",
+                  getModeString(currentMode));
+}
+
+static void pkStopJamming() {
+    pkJamTaskRunning = false;
+
+    if (pkJamTaskHandle) {
+        unsigned long waitStart = millis();
+        while (!pkJamTaskDone && (millis() - waitStart < 500)) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+        pkJamTaskHandle = NULL;
+    }
+
+    jammerActive = false;
+    Serial.println("[PROTOKILL] Stopped — core 0 task terminated");
+}
 
 #define PK_LINE_HEIGHT 12
 #define PK_MAX_LINES 15
@@ -1767,32 +1894,7 @@ static const char* getModeString(OperationMode mode) {
     }
 }
 
-// Start carrier wave on specific channel (proper TX mode)
-static void pkStartCarrier(byte channel) {
-    nrfDisable();                     // CE LOW — force PLL retune on channel change
-    nrfSetTX();                       // Switch to TX mode FIRST!
-    nrfSetChannel(channel);
-    nrfSetRegister(0x06, 0x9E);       // CONT_WAVE + PLL_LOCK + 0dBm + 2Mbps
-    nrfEnable();                      // CE HIGH — PLL locks on new frequency
-}
-
-static void pkStopCarrier() {
-    nrfDisable();
-    nrfSetRegister(0x06, 0x0F);       // Normal mode
-}
-
-static void initRadio() {
-    if (jammerActive) {
-        nrfDisable();
-        nrfPowerUp();
-        nrfSetRegister(0x01, 0x0);     // Disable auto-ack
-        nrfSetTX();                    // Switch to TX mode!
-        nrfSetRegister(0x06, 0x9E);    // Constant carrier mode
-    } else {
-        pkStopCarrier();
-        nrfPowerDown();
-    }
-}
+// Old raw SPI functions removed — dual-core task handles all radio ops on core 0
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EQUALIZER SYSTEM - 85 bars like WLAN Jammer
@@ -1805,8 +1907,6 @@ static void initRadio() {
 #define PK_GRAPH_HEIGHT  155
 
 static uint8_t pkChannelHeat[PK_NUM_BARS] = {0};
-static int pkCurrentChannel = 0;
-static int pkHitCount = 0;
 static unsigned long pkLastUpdate = 0;
 
 // Get channel array and size for current protocol
@@ -2112,7 +2212,10 @@ void prokillSetup() {
     drawStatusBar();
     drawPkIconBar();
 
-    if (!nrfInit()) {
+    // Quick check that NRF24 is present (jam task does full init on core 0)
+    SPI.begin(RADIO_SPI_SCK, RADIO_SPI_MISO, RADIO_SPI_MOSI, NRF24_CSN);
+    nrf24Radio.begin();
+    if (!nrf24Radio.isChipConnected()) {
         tft.setTextSize(2);
         drawCenteredText(100, "NRF24 NOT FOUND", HALEHOUND_HOTPINK, 2);
         tft.setTextSize(1);
@@ -2150,30 +2253,31 @@ void prokillLoop() {
         if (ty >= 20 && ty <= 40) {
             // Back icon (x=10)
             if (tx < 40) {
-                jammerActive = false;
-                nrfPowerDown();
+                if (jammerActive) pkStopJamming();
                 exitRequested = true;
                 return;
             }
             // Toggle icon (x=50)
             if (tx >= 40 && tx < 100) {
-                jammerActive = !jammerActive;
-                if (jammerActive) pkHitCount = 0;
-                initRadio();
+                if (jammerActive) {
+                    pkStopJamming();
+                } else {
+                    pkStartJamming();
+                }
                 updatePkStatus();
                 while (isTouched()) { delay(10); }
             }
             // Mode + icon (x=130)
             if (tx >= 100 && tx < 170) {
                 currentMode = static_cast<OperationMode>((currentMode + 1) % 8);
-                if (jammerActive) initRadio();
+                pkJamModeIndex = (int)currentMode;  // sync to jam task
                 updatePkStatus();
                 while (isTouched()) { delay(10); }
             }
             // Mode - icon (x=170)
             if (tx >= 170) {
                 currentMode = static_cast<OperationMode>((currentMode == 0) ? 7 : (currentMode - 1));
-                if (jammerActive) initRadio();
+                pkJamModeIndex = (int)currentMode;  // sync to jam task
                 updatePkStatus();
                 while (isTouched()) { delay(10); }
             }
@@ -2181,29 +2285,17 @@ void prokillLoop() {
     }
 
     if (buttonPressed(BTN_BACK) || buttonPressed(BTN_BOOT)) {
-        jammerActive = false;
-        nrfPowerDown();
+        if (jammerActive) pkStopJamming();
         exitRequested = true;
         return;
     }
 
-    // Channel hopping when jamming
-    if (jammerActive) {
-        const byte* channels;
-        int numChannels;
-        getProtocolChannels(currentMode, &channels, &numChannels);
-
-        int randomIndex = random(0, numChannels);
-        pkCurrentChannel = channels[randomIndex];
-
-        pkStartCarrier(pkCurrentChannel);
-        delayMicroseconds(500);
-
-        pkHitCount++;
-    }
-
-    // Update display at 30ms intervals
-    if (millis() - pkLastUpdate >= 30) {
+    // ═══════════════════════════════════════════════════════════════════════
+    // JAMMING ENGINE RUNS ON CORE 0 — display runs here on core 1
+    // Full equalizer + stats at full speed, zero impact on jamming
+    // ═══════════════════════════════════════════════════════════════════════
+    unsigned long displayInterval = jammerActive ? 80 : 30;
+    if (millis() - pkLastUpdate >= displayInterval) {
         pkLastUpdate = millis();
         updatePkStats();
         drawPkEqualizer();
@@ -2215,10 +2307,11 @@ bool isExitRequested() {
 }
 
 void cleanup() {
-    jammerActive = false;
+    if (jammerActive || pkJamTaskRunning) {
+        pkStopJamming();
+    }
     exitRequested = false;
     uiInitialized = false;
-    nrfPowerDown();
 }
 
 }  // namespace ProtoKill
