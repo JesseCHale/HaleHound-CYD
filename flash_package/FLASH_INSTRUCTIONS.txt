@@ -1,6 +1,6 @@
 ================================================================================
               HALEHOUND-CYD FLASH INSTRUCTIONS
-              v2.7.0 CYD Edition
+              v2.8.0 CYD Edition
 ================================================================================
 
   Repository:   https://github.com/JesseCHale/HaleHound-CYD
