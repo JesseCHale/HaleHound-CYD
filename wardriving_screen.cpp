@@ -392,6 +392,11 @@ void wardrivingScreen() {
     wdScanCount = 0;
     wdLastScanErr = ESP_OK;
 
+    // Force clean WiFi state — previous module may have used raw esp_wifi_stop()
+    // which desyncs Arduino's _esp_wifi_started flag. WiFi.mode(WIFI_OFF) resets it.
+    WiFi.mode(WIFI_OFF);
+    delay(50);
+
     // Init WiFi in STA mode for scanning
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
@@ -480,8 +485,9 @@ void wardrivingScreen() {
         wdScanning = false;
     }
 
-    // Kill WiFi
-    esp_wifi_stop();
+    // Kill WiFi — MUST use Arduino API to keep _esp_wifi_started flag in sync
+    // Raw esp_wifi_stop() desyncs the flag and silently breaks WiFi for all modules after
+    WiFi.mode(WIFI_OFF);
 
     // Stop GPS background and restore Serial
     gpsStopBackground();

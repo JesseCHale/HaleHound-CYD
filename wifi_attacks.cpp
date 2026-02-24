@@ -3740,6 +3740,7 @@ void clearEvilTwinRequest() {
 void cleanup() {
     esp_wifi_set_promiscuous(false);
     WiFi.disconnect();
+    WiFi.mode(WIFI_OFF);
     sniffing = false;
     initialized = false;
     exitRequested = false;
@@ -4349,6 +4350,11 @@ void startScan() {
     showScanning();
     isScanning = true;
 
+    // Force clean WiFi state — previous module may have used raw esp_wifi_stop()
+    // which desyncs Arduino's _esp_wifi_started flag. WiFi.mode(WIFI_OFF) resets it.
+    WiFi.mode(WIFI_OFF);
+    delay(50);
+
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
 
@@ -4647,6 +4653,7 @@ void clearAttackRequest() {
 void cleanup() {
     WiFi.scanDelete();
     WiFi.disconnect();
+    WiFi.mode(WIFI_OFF);
     initialized = false;
     exitRequested = false;
     attackPopupActive = false;
@@ -6039,6 +6046,7 @@ bool isExitRequested() { return exitRequested; }
 
 void cleanup() {
     stopPortal();
+    WiFi.mode(WIFI_OFF);
     initialized = false;
     exitRequested = false;
     waitForReleaseFlag = false;

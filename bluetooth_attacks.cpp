@@ -16,6 +16,7 @@
 #include "esp_gap_ble_api.h"
 #include "esp_bt_main.h"
 #include "esp_wifi.h"
+#include <WiFi.h>
 #include "skull_bg.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1156,7 +1157,8 @@ void setup() {
     drawStatusBar();
 
     // Kill WiFi completely — it shares the 2.4GHz radio with BLE
-    esp_wifi_stop();
+    // MUST use Arduino API to keep _esp_wifi_started flag in sync
+    WiFi.mode(WIFI_OFF);
     delay(200);
 
     // Initialize BLE — must wait for controller to be fully ready before setting TX power
@@ -1953,7 +1955,8 @@ void setup() {
     drawStatusBar();
 
     // Kill WiFi — shares 2.4GHz radio with BLE
-    esp_wifi_stop();
+    // MUST use Arduino API to keep _esp_wifi_started flag in sync
+    WiFi.mode(WIFI_OFF);
     delay(200);
 
     // Initialize BLE — wait for controller ready before TX power
