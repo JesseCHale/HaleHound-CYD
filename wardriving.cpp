@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // HaleHound-CYD Wardriving Module Implementation
-// WiGLE-compatible WiFi network logging with GPS
+// WiGLE-compatible WiFi + BLE network logging with GPS
 // Created: 2026-02-07
+// Updated: 2026-02-24 — BLE logging, open network count, WiGLE v1.6
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "wardriving.h"
@@ -28,9 +29,13 @@ static WardrivingStats stats;
 static File logFile;
 static bool sdInitialized = false;
 
-// Duplicate detection - store BSSIDs we've seen
+// WiFi duplicate detection - store BSSIDs we've seen
 static uint8_t seenBSSIDs[WARDRIVING_MAX_NETWORKS][6];
 static int seenCount = 0;
+
+// BLE duplicate detection - store BLE MACs we've seen
+static uint8_t seenBLEMACs[WARDRIVING_MAX_BLE_DEVICES][6];
+static int seenBLECount = 0;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
@@ -56,6 +61,28 @@ static String authModeToString(int authMode) {
     }
 }
 
+// WiFi channel to frequency (MHz)
+static int channelToFrequency(int channel) {
+    // 2.4 GHz band: channels 1-14
+    if (channel >= 1 && channel <= 13) {
+        return 2412 + (channel - 1) * 5;
+    }
+    if (channel == 14) {
+        return 2484;
+    }
+    // 5 GHz band common channels
+    if (channel >= 36 && channel <= 64) {
+        return 5180 + (channel - 36) * 5;
+    }
+    if (channel >= 100 && channel <= 144) {
+        return 5500 + (channel - 100) * 5;
+    }
+    if (channel >= 149 && channel <= 165) {
+        return 5745 + (channel - 149) * 5;
+    }
+    return 0;
+}
+
 static bool isBSSIDSeen(const uint8_t* bssid) {
     for (int i = 0; i < seenCount; i++) {
         if (memcmp(seenBSSIDs[i], bssid, 6) == 0) {
@@ -72,13 +99,29 @@ static void addSeenBSSID(const uint8_t* bssid) {
     }
 }
 
+static bool isBLEMACSeen(const uint8_t* mac) {
+    for (int i = 0; i < seenBLECount; i++) {
+        if (memcmp(seenBLEMACs[i], mac, 6) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void addSeenBLEMAC(const uint8_t* mac) {
+    if (seenBLECount < WARDRIVING_MAX_BLE_DEVICES) {
+        memcpy(seenBLEMACs[seenBLECount], mac, 6);
+        seenBLECount++;
+    }
+}
+
 static String generateFilename() {
     // Generate filename with timestamp if GPS available, otherwise sequential
     GPSData gpsData = gpsGetData();
 
     if (gpsData.valid && gpsData.year > 2020) {
         char buf[64];
-        snprintf(buf, sizeof(buf), "%s%s%04d%02d%02d_%02d%02d%02d.csv",
+        snprintf(buf, sizeof(buf), "%s/%s%04d%02d%02d_%02d%02d%02d.csv",
                  WARDRIVING_LOG_DIR, WARDRIVING_FILE_PREFIX,
                  gpsData.year, gpsData.month, gpsData.day,
                  gpsData.hour, gpsData.minute, gpsData.second);
@@ -152,7 +195,12 @@ bool wardrivingStart() {
     stats.networksLogged = 0;
     stats.newNetworks = 0;
     stats.duplicates = 0;
+    stats.openNetworks = 0;
+    stats.bleDevicesLogged = 0;
+    stats.newBleDevices = 0;
+    stats.bleDuplicates = 0;
     seenCount = 0;
+    seenBLECount = 0;
 
     // Generate new filename
     stats.currentFile = generateFilename();
@@ -160,16 +208,16 @@ bool wardrivingStart() {
     // Deselect other SPI devices before SD access
     spiDeselect();
 
-    // Open file and write WiGLE header
+    // Open file and write WiGLE v1.6 header
     logFile = SD.open(stats.currentFile, FILE_WRITE);
     if (!logFile) {
         Serial.println("[WARDRIVING] Failed to create log file");
         return false;
     }
 
-    // WiGLE CSV header
-    logFile.println("WigleWifi-1.4,appRelease=HaleHound-CYD,model=ESP32-CYD,release=2.5.0,device=HaleHound,display=CYD,board=ESP32,brand=JesseCHale");
-    logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");
+    // WiGLE v1.6 CSV header — pre-header line + column header
+    logFile.println("WigleWifi-1.6,appRelease=HaleHound-CYD,model=ESP32-CYD,release=2.5.0,device=HaleHound,display=CYD,board=ESP32,brand=JesseCHale,star=Sol,body=3,subBody=0");
+    logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
     logFile.flush();
 
     stats.active = true;
@@ -182,7 +230,8 @@ void wardrivingStop() {
         logFile.close();
     }
     stats.active = false;
-    Serial.println("[WARDRIVING] Session stopped. Networks: " + String(stats.newNetworks));
+    Serial.printf("[WARDRIVING] Session stopped. WiFi: %lu  BLE: %lu\n",
+                  (unsigned long)stats.newNetworks, (unsigned long)stats.newBleDevices);
 }
 
 bool wardrivingIsActive() {
@@ -211,11 +260,16 @@ bool wardrivingLogNetwork(
         return false;
     }
 
+    // Track open networks
+    if (authMode == WIFI_AUTH_OPEN) {
+        stats.openNetworks++;
+    }
+
     // Get GPS data
     GPSData gpsData = gpsGetData();
 
-    // Build CSV line
-    // MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type
+    // Build CSV line — WiGLE v1.6 format
+    // MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type
     String line = macToString(bssid);
     line += ",";
 
@@ -244,9 +298,18 @@ bool wardrivingLogNetwork(
     }
     line += ",";
 
+    // Channel
     line += String(channel);
     line += ",";
 
+    // Frequency (MHz)
+    int freq = channelToFrequency(channel);
+    if (freq > 0) {
+        line += String(freq);
+    }
+    line += ",";
+
+    // RSSI
     line += String(rssi);
     line += ",";
 
@@ -268,6 +331,12 @@ bool wardrivingLogNetwork(
     }
     line += ",";
 
+    // RCOIs — empty for WiFi
+    line += ",";
+
+    // MfgrId — empty for WiFi
+    line += ",";
+
     line += "WIFI";
 
     // Deselect other SPI devices before SD write
@@ -281,6 +350,117 @@ bool wardrivingLogNetwork(
     addSeenBSSID(bssid);
     stats.networksLogged++;
     stats.newNetworks++;
+
+    return true;
+}
+
+bool wardrivingLogBleDevice(
+    const uint8_t* mac,
+    const char* name,
+    int rssi,
+    const uint8_t* mfgData,
+    uint8_t mfgDataLen
+) {
+    if (!stats.active || !logFile) {
+        return false;
+    }
+
+    // Check for duplicate
+    if (isBLEMACSeen(mac)) {
+        stats.bleDuplicates++;
+        return false;
+    }
+
+    // Get GPS data
+    GPSData gpsData = gpsGetData();
+
+    // Build CSV line — WiGLE v1.6 format for BLE
+    // MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,Lat,Lon,Alt,Acc,RCOIs,MfgrId,Type
+    String line = macToString(mac);
+    line += ",";
+
+    // SSID = BLE device name (escape if needed)
+    if (name && name[0] != '\0') {
+        String escapedName = name;
+        escapedName.replace("\"", "\"\"");
+        if (escapedName.indexOf(',') >= 0 || escapedName.indexOf('"') >= 0) {
+            line += "\"" + escapedName + "\"";
+        } else {
+            line += escapedName;
+        }
+    }
+    line += ",";
+
+    // AuthMode for BLE
+    line += "[LE]";
+    line += ",";
+
+    // Timestamp
+    if (gpsData.valid && gpsData.year > 2020) {
+        char timestamp[24];
+        snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02d %02d:%02d:%02d",
+                 gpsData.year, gpsData.month, gpsData.day,
+                 gpsData.hour, gpsData.minute, gpsData.second);
+        line += timestamp;
+    } else {
+        line += "0000-00-00 00:00:00";
+    }
+    line += ",";
+
+    // Channel — 0 for BLE
+    line += "0";
+    line += ",";
+
+    // Frequency — empty for BLE
+    line += ",";
+
+    // RSSI
+    line += String(rssi);
+    line += ",";
+
+    // GPS coordinates
+    if (gpsData.valid) {
+        char lat[16], lon[16], alt[16];
+        snprintf(lat, sizeof(lat), "%.6f", gpsData.latitude);
+        snprintf(lon, sizeof(lon), "%.6f", gpsData.longitude);
+        snprintf(alt, sizeof(alt), "%.1f", gpsData.altitude);
+        line += lat;
+        line += ",";
+        line += lon;
+        line += ",";
+        line += alt;
+        line += ",";
+        line += "10";
+    } else {
+        line += "0.0,0.0,0.0,0";
+    }
+    line += ",";
+
+    // RCOIs — empty for BLE
+    line += ",";
+
+    // MfgrId — first 2 bytes of manufacturer data = company ID (little-endian)
+    if (mfgData && mfgDataLen >= 2) {
+        uint16_t companyId = mfgData[0] | (mfgData[1] << 8);
+        char mfgBuf[8];
+        snprintf(mfgBuf, sizeof(mfgBuf), "0x%04X", companyId);
+        line += mfgBuf;
+    }
+    line += ",";
+
+    line += "BLE";
+
+    // Deselect other SPI devices before SD write
+    spiDeselect();
+
+    // Write to file
+    logFile.println(line);
+    logFile.flush();
+
+    // Track this BLE MAC
+    addSeenBLEMAC(mac);
+    stats.bleDevicesLogged++;
+    stats.newBleDevices++;
 
     return true;
 }
@@ -324,6 +504,8 @@ void wardrivingDrawStatus(int x, int y) {
     tft.setCursor(x, y);
     tft.print("WD:");
     tft.print(stats.newNetworks);
+    tft.print("+");
+    tft.print(stats.newBleDevices);
 
     if (!stats.gpsReady) {
         tft.print(" !GPS");
