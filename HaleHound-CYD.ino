@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // HaleHound-CYD Main Firmware
 // ESP32 Cheap Yellow Display Edition
-// v2.8.0 — Dual-core jammer engine, CYD/CYD-HAT edition separation
+// v2.9.0 — Wardriving BLE scan, open net tracking, GPS auto-init
 // Created: 2026-02-06
 // ═══════════════════════════════════════════════════════════════════════════
 //
