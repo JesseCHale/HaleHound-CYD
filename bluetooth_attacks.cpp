@@ -368,22 +368,27 @@ static const int MODE_DEVICE_COUNTS[] = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 static bool initialized = false;
-static bool spamming = false;
+static volatile bool spamming = false;
 static bool exitRequested = false;
-static int currentMode = MODE_APPLE_POPUP;
+static volatile int currentMode = MODE_APPLE_POPUP;
 static int initialMode = -1;
 
-static unsigned long lastBroadcast = 0;
-static uint32_t packetCount = 0;
-static unsigned long rateWindowStart = 0;
-static uint32_t rateWindowCount = 0;
-static uint16_t currentRate = 0;
+static volatile uint32_t packetCount = 0;
+static volatile uint32_t rateWindowCount = 0;
+static volatile uint16_t currentRate = 0;
 
 // Per-mode device index (persists when switching modes)
-static int deviceIndex[MODE_COUNT] = {0};
+static volatile int deviceIndex[MODE_COUNT] = {0};
 static int chaosStep = 0;
 
-#define SPAM_INTERVAL_MS 40  // 25 broadcasts/sec
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE TASK MANAGEMENT
+// Core 0: BLE broadcast engine (doBroadcast loop)
+// Core 1: Display + touch (Arduino main loop)
+// ═══════════════════════════════════════════════════════════════════════════
+
+static TaskHandle_t spamTaskHandle = NULL;
+static volatile bool spamTaskRunning = false;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SCROLLING BROADCAST LOG
@@ -396,8 +401,8 @@ static int chaosStep = 0;
 
 static char logLines[SP_LOG_MAX_LINES][42];  // Fixed char buffers (no heap alloc)
 static uint16_t logColors[SP_LOG_MAX_LINES];
-static int logCount = 0;
-static bool logDirty = false;  // Only redraw log when data changes
+static volatile int logCount = 0;
+static volatile bool logDirty = false;  // Core 0 sets via addLogEntry, Core 1 reads in drawLog
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SKULL ANIMATION - 2 rows of 8 (matches BLE Jammer pattern)
@@ -1107,24 +1112,85 @@ static void doBroadcast() {
     addLogEntry(logBuf, HALEHOUND_VIOLET);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CORE 0 BROADCAST TASK — Runs doBroadcast() as fast as BLE allows
+// BLE advertising has inherent ~21ms per cycle (delay(1) + delay(20))
+// Removing the 40ms throttle roughly doubles broadcast rate (~45-50/sec)
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void spamTxTask(void* param) {
+    spamTaskRunning = true;
+    unsigned long rateStart = millis();
+
+    while (spamming) {
+        // Heap safety — BLEAdvertisementData allocates std::string on heap
+        if (esp_get_free_heap_size() < 8192) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        doBroadcast();  // Increments packetCount and rateWindowCount
+
+        // Update rate counter every second
+        unsigned long now = millis();
+        if (now - rateStart >= 1000) {
+            currentRate = (uint16_t)rateWindowCount;
+            rateWindowCount = 0;
+            rateStart = now;
+        }
+
+        // Yield — delay(20) in doBroadcast already yields, but belt and suspenders
+        vTaskDelay(1);
+    }
+
+    spamTaskRunning = false;
+    vTaskDelete(NULL);
+}
+
+static void startSpamTask() {
+    if (spamTaskHandle != NULL) return;
+    xTaskCreatePinnedToCore(spamTxTask, "bleSpam", 8192, NULL, 1, &spamTaskHandle, 0);
+}
+
+static void stopSpamTask() {
+    spamming = false;
+    if (spamTaskHandle == NULL) return;
+
+    // Wait for task to finish (500ms timeout)
+    unsigned long start = millis();
+    while (spamTaskRunning && (millis() - start < 500)) {
+        delay(10);
+    }
+
+    // Force kill if task didn't exit cleanly
+    if (spamTaskRunning) {
+        vTaskDelete(spamTaskHandle);
+    }
+
+    spamTaskHandle = NULL;
+    spamTaskRunning = false;
+
+    // Stop any lingering advertising
+    esp_ble_gap_stop_advertising();
+}
+
 static void startSpam() {
     spamming = true;
-    lastBroadcast = 0;  // Force immediate first broadcast
-    rateWindowStart = millis();
     rateWindowCount = 0;
     addLogEntry("[!] SPAM STARTED", HALEHOUND_HOTPINK);
     drawIconBar();
     drawHeader();
     drawLog();  // Force immediate log display on state change
 
+    startSpamTask();  // Launch Core 0 broadcast engine
+
     #if CYD_DEBUG
-    Serial.printf("[BLESPOOF] Started - Mode: %s\n", MODE_NAMES[currentMode]);
+    Serial.printf("[BLESPOOF] Started - Mode: %s (Core 0)\n", MODE_NAMES[currentMode]);
     #endif
 }
 
 static void stopSpam() {
-    esp_ble_gap_stop_advertising();
-    spamming = false;
+    stopSpamTask();  // Stop Core 0 task first
     addLogEntry("[!] SPAM STOPPED", HALEHOUND_HOTPINK);
     drawIconBar();
     drawHeader();
@@ -1175,12 +1241,13 @@ void setup() {
     exitRequested = false;
     packetCount = 0;
     currentRate = 0;
-    rateWindowStart = millis();
     rateWindowCount = 0;
     logCount = 0;
     skullFrame = 0;
     chaosStep = 0;
-    memset(deviceIndex, 0, sizeof(deviceIndex));
+    for (int i = 0; i < MODE_COUNT; i++) deviceIndex[i] = 0;
+    spamTaskHandle = NULL;
+    spamTaskRunning = false;
 
     // Apply initial mode if set (for SourApple redirect)
     if (initialMode >= 0 && initialMode < MODE_COUNT) {
@@ -1275,25 +1342,10 @@ void loop() {
     if (buttonPressed(BTN_DOWN)) nextMode();
     if (buttonPressed(BTN_SELECT)) toggleSpam();
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // BROADCAST ENGINE (40ms interval = 25 broadcasts/sec)
-    // ═══════════════════════════════════════════════════════════════════════
-    if (spamming) {
-        unsigned long now = millis();
-        if (now - lastBroadcast >= SPAM_INTERVAL_MS) {
-            doBroadcast();
-            lastBroadcast = now;
-        }
+    // Broadcast engine runs on Core 0 (spamTxTask)
+    // Rate calculation also runs on Core 0
 
-        // Update rate counter every second
-        if (now - rateWindowStart >= 1000) {
-            currentRate = rateWindowCount;
-            rateWindowCount = 0;
-            rateWindowStart = now;
-        }
-    }
-
-    // Feed the watchdog — prevents task WDT reset during tight broadcast loops
+    // Feed the watchdog
     yield();
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1313,9 +1365,7 @@ bool isExitRequested() {
 }
 
 void cleanup() {
-    if (spamming) {
-        esp_ble_gap_stop_advertising();
-    }
+    stopSpamTask();  // Stop Core 0 task before BLE teardown
 
     BLEDevice::deinit(false);  // false = library bug: deinit(true) never resets initialized flag
 
