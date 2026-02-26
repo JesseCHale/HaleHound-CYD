@@ -3060,15 +3060,22 @@ static void drawAnalyzerUI() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FREQUENCY LIST — 17 SubGHz channels
+// FREQUENCY LIST — 33 SubGHz channels across CC1101 bands
 // ═══════════════════════════════════════════════════════════════════════════
 
 static const float frequencyListMHz[] = {
-    300.000, 303.875, 304.250, 310.000, 315.000, 318.000,
-    390.000, 418.000, 433.075, 433.420, 433.920, 434.420,
-    434.775, 438.900, 868.350, 915.000, 925.000
+    // 300-348 MHz band (US garage/auto remotes)
+    300.000, 302.000, 303.875, 304.250, 306.000, 310.000,
+    313.000, 315.000, 318.000, 330.000, 345.000,
+    // 387-464 MHz ISM band (most active SubGHz)
+    390.000, 400.000, 418.000, 426.000, 430.000,
+    433.075, 433.420, 433.920, 434.420, 434.775, 438.900,
+    // 779-928 MHz (EU/US ISM, LoRa)
+    779.000, 868.000, 868.350, 900.000, 903.000,
+    906.000, 910.000, 915.000, 920.000, 925.000, 928.000
 };
 static const int frequencyCount = sizeof(frequencyListMHz) / sizeof(frequencyListMHz[0]);
+#define SA_MAX_FREQ 64  // Max array size for frequency data
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SDR-STYLE DISPLAY LAYOUT
@@ -3080,9 +3087,9 @@ static const int frequencyCount = sizeof(frequencyListMHz) / sizeof(frequencyLis
 // │ Icon Bar (Start/Stop, Clear, Back)   │
 // ╞══════════════════════════════════════╡ y=37
 // │                                      │
-// │  SCROLLING HEAT MAP WATERFALL        │
-// │  (150 rows of frequency vs time)     │
-// │  Color: black→purple→blue→pink→white │
+// │  SPECTRUM BARS (33 LED VU meters)    │
+// │  (6px wide, heat palette per bar)    │
+// │  Peak hold dots in hot pink          │
 // │                                      │
 // ├──── hot pink separator ──────────────┤ y=188
 // │                                      │
@@ -3119,11 +3126,21 @@ static const int frequencyCount = sizeof(frequencyListMHz) / sizeof(frequencyLis
 // DATA ARRAYS
 // ═══════════════════════════════════════════════════════════════════════════
 
-static uint8_t rssiLevels[17];          // Raw RSSI per freq (0-125)
-static uint8_t peakLevels[17];          // Smoothed for display (0-125)
+static uint8_t rssiLevels[SA_MAX_FREQ];     // Raw RSSI per freq (0-125)
+static uint8_t peakLevels[SA_MAX_FREQ];     // Smoothed for display (0-125)
 
-// Waterfall
-static unsigned int epoch = 0;          // Current write row in waterfall
+// Spectrum bars (LED VU meter style — 33 bars, 6px wide, 1px gap)
+#define BAR_WIDTH   6
+#define BAR_GAP     1
+#define BAR_STRIDE  (BAR_WIDTH + BAR_GAP)   // 7px per bar — 33*7-1 = 230px
+#define SEG_HEIGHT  4
+#define SEG_GAP     1
+#define SEG_STRIDE  (SEG_HEIGHT + SEG_GAP)  // 5px per segment
+#define SEG_COUNT   (WF_HEIGHT / SEG_STRIDE) // 30 segments
+
+static uint8_t peakHoldSeg[SA_MAX_FREQ];        // Peak hold segment index per bar (falling dot)
+static unsigned long peakHoldTime[SA_MAX_FREQ];  // Timestamp of last peak hit
+static uint8_t prevBarSegs[SA_MAX_FREQ];         // Previous frame's lit segment count (flicker-free)
 
 // Line graph (flicker-free erase/redraw)
 static int16_t prevLineY[WF_WIDTH_MAX]; // Previous frame's Y positions (max size for any rotation)
@@ -3134,9 +3151,19 @@ static uint16_t heatPalette[128];
 
 // State
 static bool initialized = false;
-static bool exitRequested = false;
-static bool scanning = true;
+static volatile bool exitRequested = false;
+static volatile bool scanning = true;
 static unsigned long lastStatusDraw = 0;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE ENGINE — Core 0 does CC1101 scanning, Core 1 draws
+// 17-channel scan takes ~18.7ms — moved off Core 1 for responsive UI
+// ═══════════════════════════════════════════════════════════════════════════
+
+static TaskHandle_t saScanTaskHandle = NULL;
+static volatile bool saScanTaskRunning = false;
+static volatile bool saScanTaskDone = false;
+static volatile bool saFrameReady = false;
 
 // RSSI range for CC1101 — TIGHT range for SubGHz sensitivity
 // Noise floor is ~-85dBm, strong close-range signal is ~-25dBm
@@ -3228,28 +3255,65 @@ static uint8_t interpolateLevel(int pixelX) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WATERFALL ROW — One scan sweep → one pixel row (epoch-based, zero flicker)
-// Each row is drawn pixel-by-pixel using heat map palette colors.
-// The epoch wraps at WF_HEIGHT creating a continuous scrolling display.
+// SPECTRUM BARS — LED VU meter style (17 bars, 30 segments each)
+// Each bar = one frequency. Segments light bottom-to-top with heat palette.
+// Peak hold dots in hot pink fall slowly after signal drops.
+// Only changed segments are redrawn — zero flicker.
 // ═══════════════════════════════════════════════════════════════════════════
 
-static void drawWaterfallRow() {
-    int y = WF_Y + epoch;
+static void drawSpectrumBars() {
+    for (int ch = 0; ch < frequencyCount; ch++) {
+        int barX = WF_X + ch * BAR_STRIDE;
+        uint8_t level = displayLevel(peakLevels[ch]);
 
-    // Draw one row of heat-mapped pixels
-    for (int x = 0; x < WF_WIDTH; x++) {
-        uint8_t level = interpolateLevel(x);
-        int palIdx = (level * 127) / 125;
-        if (palIdx > 127) palIdx = 127;
-        tft.drawPixel(WF_X + x, y, heatPalette[palIdx]);
+        // How many segments to light (0 to SEG_COUNT)
+        int litSegs = ((int)level * SEG_COUNT) / 125;
+        if (litSegs > SEG_COUNT) litSegs = SEG_COUNT;
+
+        // ── Peak hold tracking ──────────────────────────────────────────
+        if (litSegs > (int)peakHoldSeg[ch]) {
+            peakHoldSeg[ch] = litSegs;
+            peakHoldTime[ch] = millis();
+        } else if (millis() - peakHoldTime[ch] > 400) {
+            // Slow fall after 400ms hold
+            if (peakHoldSeg[ch] > 0) peakHoldSeg[ch]--;
+        }
+
+        int prev = prevBarSegs[ch];
+
+        // ── Draw only changed segments (incremental update) ─────────────
+        if (litSegs > prev) {
+            // New segments lighting up (draw from prev to litSegs)
+            for (int s = prev; s < litSegs; s++) {
+                int segY = WF_Y + WF_HEIGHT - (s + 1) * SEG_STRIDE;
+                // Color based on segment POSITION — bottom=purple, top=white
+                int palIdx = (s * 127) / (SEG_COUNT - 1);
+                tft.fillRect(barX, segY, BAR_WIDTH, SEG_HEIGHT, heatPalette[palIdx]);
+            }
+        } else if (litSegs < prev) {
+            // Segments turning off (erase from litSegs to prev)
+            for (int s = litSegs; s < prev; s++) {
+                int segY = WF_Y + WF_HEIGHT - (s + 1) * SEG_STRIDE;
+                tft.fillRect(barX, segY, BAR_WIDTH, SEG_HEIGHT, TFT_BLACK);
+            }
+        }
+
+        // ── Peak hold dot ───────────────────────────────────────────────
+        // Erase old peak position if it moved
+        int peakSeg = (int)peakHoldSeg[ch];
+        // Always redraw peak dot area (may have been erased by bar change)
+        if (peakSeg > litSegs && peakSeg > 0) {
+            int peakY = WF_Y + WF_HEIGHT - (peakSeg) * SEG_STRIDE;
+            // Erase segment above peak (in case peak fell)
+            if (peakSeg + 1 <= SEG_COUNT) {
+                int aboveY = WF_Y + WF_HEIGHT - (peakSeg + 1) * SEG_STRIDE;
+                tft.fillRect(barX, aboveY, BAR_WIDTH, SEG_HEIGHT, TFT_BLACK);
+            }
+            tft.fillRect(barX, peakY, BAR_WIDTH, SEG_HEIGHT, HALEHOUND_HOTPINK);
+        }
+
+        prevBarSegs[ch] = litSegs;
     }
-
-    // Clear the next row (creates subtle scan line cursor)
-    int nextY = WF_Y + ((epoch + 1) % WF_HEIGHT);
-    tft.drawFastHLine(WF_X, nextY, WF_WIDTH, TFT_BLACK);
-
-    // Advance epoch (wraps at WF_HEIGHT)
-    epoch = (epoch + 1) % WF_HEIGHT;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3317,14 +3381,14 @@ static void drawLineGraph() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void drawStaticElements() {
-    // Hot pink separator between waterfall and line graph
+    // Hot pink separator between bars and line graph
     tft.drawFastHLine(0, SEP_Y, SCREEN_WIDTH, HALEHOUND_HOTPINK);
 
     // Line graph axes
     tft.drawFastHLine(WF_X, AXIS_Y, WF_WIDTH, HALEHOUND_MAGENTA);            // X axis
     tft.drawFastVLine(WF_X - 1, LG_Y, LG_HEIGHT + 1, HALEHOUND_MAGENTA);    // Y axis
 
-    // Frequency labels below X axis
+    // Frequency labels below line graph X axis
     tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
     tft.setTextSize(1);
     tft.setCursor(WF_X, LABEL_Y);
@@ -3334,44 +3398,95 @@ static void drawStaticElements() {
     tft.setCursor(WF_X + WF_WIDTH - 20, LABEL_Y);
     tft.print("925");
 
-    // "MHz" label on right side
+    // Key frequency markers under spectrum bars (gunmetal, subtle)
     tft.setTextColor(HALEHOUND_GUNMETAL, TFT_BLACK);
-    tft.setCursor(WF_X + WF_WIDTH - 5, LABEL_Y);
-    // (space is tight, skip MHz label)
+    // Bar 0 = 300MHz, Bar 16 = 433MHz, Bar 23 = 868MHz, Bar 30 = 915MHz
+    tft.setCursor(WF_X, SEP_Y - 9);
+    tft.print("300");
+    tft.setCursor(WF_X + 16 * BAR_STRIDE, SEP_Y - 9);
+    tft.print("433");
+    tft.setCursor(WF_X + 23 * BAR_STRIDE - 2, SEP_Y - 9);
+    tft.print("868");
+    tft.setCursor(WF_X + 30 * BAR_STRIDE - 2, SEP_Y - 9);
+    tft.print("915");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BATCH SCAN — All 17 frequencies in one pass (~8.5ms total)
+// BATCH SCAN — All 33 frequencies in one pass (~20ms total, ~50 FPS)
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void scanAllFrequencies() {
     for (int ch = 0; ch < frequencyCount && scanning && !exitRequested; ch++) {
         ELECHOUSE_cc1101.setMHZ(frequencyListMHz[ch]);
         ELECHOUSE_cc1101.SetRx();
-        delayMicroseconds(800);  // Longer settle for accurate RSSI
+        delayMicroseconds(450);  // 450us settle — CC1101 synth needs more than NRF24
 
         // Double RSSI read — OOK remotes pulse on/off, one read often catches "off"
         int rssi1 = ELECHOUSE_cc1101.getRssi();
-        delayMicroseconds(300);
+        delayMicroseconds(150);
         int rssi2 = ELECHOUSE_cc1101.getRssi();
         int rssi = max(rssi1, rssi2);  // Take the stronger reading
 
         uint8_t level = rssiToLevel(rssi);
         rssiLevels[ch] = level;
 
-        // Peak-hold smoothing: instant attack, slow 5% decay
-        // Brief SubGHz bursts stay visible ~1 second as they fade
-        if (level > peakLevels[ch]) {
-            peakLevels[ch] = level;          // Instant attack
+        // Exponential smoothing (matches NRF24 Analyzer pattern)
+        // 50/50 blend: smooth rise AND fall for buttery bar animation
+        peakLevels[ch] = (peakLevels[ch] + level) / 2;
+    }
+
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CORE 0 SCAN TASK — Continuous CC1101 scanning, stores RSSI in shared arrays
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void saScanTask(void* param) {
+    #if CYD_DEBUG
+    Serial.println("[ANALYZER] Core 0: Scan task started");
+    #endif
+
+    while (saScanTaskRunning) {
+        // Wait for Core 1 to consume previous frame
+        if (saFrameReady) {
+            vTaskDelay(1);
+            continue;
+        }
+
+        // Only scan when not paused
+        if (scanning) {
+            scanAllFrequencies();
+            saFrameReady = true;  // Signal Core 1 to draw
         } else {
-            peakLevels[ch] = (peakLevels[ch] * 95) / 100;  // 5% decay per scan
+            vTaskDelay(pdMS_TO_TICKS(20));  // Idle when paused
         }
     }
 
-    // Check touch for exit during scan
-    uint16_t tx, ty;
-    if (getTouchPoint(&tx, &ty) && tx < 40 && ty >= 20 && ty <= 40) {
-        exitRequested = true;
+    #if CYD_DEBUG
+    Serial.println("[ANALYZER] Core 0: Scan task exiting");
+    #endif
+    saScanTaskHandle = NULL;
+    saScanTaskDone = true;
+    vTaskDelete(NULL);
+}
+
+static void startScanTask() {
+    if (saScanTaskHandle) return;
+    saScanTaskRunning = true;
+    saScanTaskDone = false;
+    saFrameReady = false;
+    xTaskCreatePinnedToCore(saScanTask, "SubAnalyze", 4096, NULL, 1, &saScanTaskHandle, 0);
+}
+
+static void stopScanTask() {
+    saScanTaskRunning = false;
+    if (saScanTaskHandle) {
+        // Wait for task to self-delete (sets saScanTaskDone before vTaskDelete(NULL))
+        unsigned long t0 = millis();
+        while (!saScanTaskDone && (millis() - t0 < 500)) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        saScanTaskHandle = NULL;
     }
 }
 
@@ -3399,7 +3514,11 @@ static void drawStatusArea() {
 
     tft.setCursor(5, STATUS_Y + 14);
     tft.setTextColor(HALEHOUND_GUNMETAL, TFT_BLACK);
-    tft.printf("Row:%d/%d  %s", epoch, WF_HEIGHT,
+    int activeCount = 0;
+    for (int i = 0; i < frequencyCount; i++) {
+        if (displayLevel(peakLevels[i]) > 0) activeCount++;
+    }
+    tft.printf("Active:%d/%d  %s", activeCount, frequencyCount,
         scanning ? "SCANNING" : "PAUSED");
 }
 
@@ -3455,9 +3574,11 @@ void setup() {
     // Initialize data arrays
     memset(rssiLevels, 0, sizeof(rssiLevels));
     memset(peakLevels, 0, sizeof(peakLevels));
+    memset(peakHoldSeg, 0, sizeof(peakHoldSeg));
+    memset(peakHoldTime, 0, sizeof(peakHoldTime));
+    memset(prevBarSegs, 0, sizeof(prevBarSegs));
     memset(prevLineY, 0, sizeof(prevLineY));
     prevLineValid = false;
-    epoch = 0;
     lastStatusDraw = 0;
 
     // Build heat map palette
@@ -3472,8 +3593,11 @@ void setup() {
 
     initialized = true;
 
+    // Start Core 0 scanning task
+    startScanTask();
+
     #if CYD_DEBUG
-    Serial.println("[ANALYZER] SDR display ready - 17 frequencies");
+    Serial.println("[ANALYZER] SDR display ready - 17 frequencies, dual-core");
     #endif
 }
 
@@ -3504,8 +3628,10 @@ void loop() {
                             case 1:  // Clear / reset display
                                 memset(peakLevels, 0, sizeof(peakLevels));
                                 memset(rssiLevels, 0, sizeof(rssiLevels));
+                                memset(peakHoldSeg, 0, sizeof(peakHoldSeg));
+                                memset(peakHoldTime, 0, sizeof(peakHoldTime));
+                                memset(prevBarSegs, 0, sizeof(prevBarSegs));
                                 prevLineValid = false;
-                                epoch = 0;
                                 tft.fillRect(WF_X, WF_Y, WF_WIDTH, WF_HEIGHT, TFT_BLACK);
                                 tft.fillRect(0, LG_Y, SCREEN_WIDTH, LG_HEIGHT, TFT_BLACK);
                                 drawStaticElements();
@@ -3538,19 +3664,21 @@ void loop() {
     if (buttonPressed(BTN_DOWN)) {
         memset(peakLevels, 0, sizeof(peakLevels));
         memset(rssiLevels, 0, sizeof(rssiLevels));
+        memset(peakHoldSeg, 0, sizeof(peakHoldSeg));
+        memset(peakHoldTime, 0, sizeof(peakHoldTime));
+        memset(prevBarSegs, 0, sizeof(prevBarSegs));
         prevLineValid = false;
-        epoch = 0;
         tft.fillRect(WF_X, WF_Y, WF_WIDTH, WF_HEIGHT, TFT_BLACK);
         tft.fillRect(0, LG_Y, SCREEN_WIDTH, LG_HEIGHT, TFT_BLACK);
         drawStaticElements();
         delay(200);
     }
 
-    // Scan + draw (only when scanning)
-    if (scanning) {
-        scanAllFrequencies();    // ~8.5ms — read all 17 CC1101 channels
-        drawWaterfallRow();      // ~3ms — draw one row of heat map
+    // Draw when Core 0 has a new scan frame ready
+    if (saFrameReady && scanning) {
+        drawSpectrumBars();      // ~3ms — incremental LED VU meter bars
         drawLineGraph();         // ~7ms — erase old + draw new waveform
+        saFrameReady = false;    // Signal Core 0 to scan next frame
     }
 
     // Status area refresh every 200ms
@@ -3591,6 +3719,7 @@ bool isExitRequested() {
 }
 
 void cleanup() {
+    stopScanTask();
     scanning = false;
     ELECHOUSE_cc1101.setSidle();
     spiDeselect();
