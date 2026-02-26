@@ -44,13 +44,28 @@ static byte palette_red[128], palette_green[128], palette_blue[128];
 // State variables
 static bool initialized = false;
 static bool exitRequested = false;
-static int currentChannel = 1;
-static uint32_t packetCounter = 0;
-static uint32_t deauthCounter = 0;
-static int rssiSum = 0;
+static volatile int currentChannel = 1;
+static volatile uint32_t packetCounter = 0;
+static volatile uint32_t deauthCounter = 0;
+static volatile int rssiSum = 0;
 static unsigned int epoch = 0;
 
 static Preferences preferences;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE ENGINE — Core 0 does FFT sampling + compute, Core 1 draws
+// Sampling busy-waits 51ms per frame — moved off Core 1 for responsive UI
+// ═══════════════════════════════════════════════════════════════════════════
+
+static TaskHandle_t pmFftTaskHandle = NULL;
+static volatile bool pmFftTaskRunning = false;
+
+// Shared FFT results — Core 0 writes, Core 1 reads when fftFrameReady
+#define PM_HALF_WIDTH 120   // max(FFT_SAMPLES/2, SCREEN_WIDTH/2) = 128, clamped to 120
+static volatile int pmKValues[PM_HALF_WIDTH];
+static volatile int pmMaxK = 0;
+static volatile bool fftFrameReady = false;
+static volatile uint32_t pmDisplayPktCount = 0;  // snapshot for Core 1 display
 
 // Promiscuous mode callback
 static void IRAM_ATTR wifiPromiscuousCB(void* buf, wifi_promiscuous_pkt_type_t type) {
@@ -100,6 +115,179 @@ static void initPalette() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CORE 0 FFT TASK — Sampling + compute, stores k-values in shared buffer
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void pmFftTask(void* param) {
+    #if CYD_DEBUG
+    Serial.println("[PKTMON] Core 0: FFT task started");
+    #endif
+
+    const unsigned int half_width = min((int)(FFT_SAMPLES >> 1), (int)(SCREEN_WIDTH / 2));
+    const float scale = (float)half_width / (float)(FFT_SAMPLES >> 1);
+
+    while (pmFftTaskRunning) {
+        // Wait for Core 1 to consume previous frame
+        if (fftFrameReady) {
+            vTaskDelay(1);
+            continue;
+        }
+
+        // ─── Sampling (51ms busy-wait) ───────────────────────────────────
+        unsigned long microseconds = micros();
+        for (int i = 0; i < FFT_SAMPLES; i++) {
+            vReal[i] = packetCounter * 300;
+            vImag[i] = 1;
+            while (micros() - microseconds < sampling_period_us) {
+                // Busy wait on Core 0 — Core 1 stays free
+            }
+            microseconds += sampling_period_us;
+        }
+
+        // Snapshot packet count for display, then reset counters
+        pmDisplayPktCount = packetCounter;
+        packetCounter = 0;
+        deauthCounter = 0;
+        rssiSum = 0;
+
+        // ─── FFT Compute ─────────────────────────────────────────────────
+        // Remove DC offset
+        double mean = 0;
+        for (uint16_t i = 0; i < FFT_SAMPLES; i++) {
+            mean += vReal[i];
+        }
+        mean /= FFT_SAMPLES;
+        for (uint16_t i = 0; i < FFT_SAMPLES; i++) {
+            vReal[i] -= mean;
+        }
+
+        // FFT transform
+        FFT.windowing(FFTWindow::Hamming, FFTDirection::Forward);
+        FFT.compute(FFTDirection::Forward);
+        FFT.complexToMagnitude();
+
+        // ─── Convert to k-values and store in shared buffer ──────────────
+        int maxK = 0;
+        for (int j = 0; j < (int)half_width; j++) {
+            int fft_idx = (int)(j / scale);
+            if (fft_idx >= (FFT_SAMPLES >> 1)) fft_idx = (FFT_SAMPLES >> 1) - 1;
+
+            int k = vReal[fft_idx] / attenuation;
+            if (k > maxK) maxK = k;
+            if (k > 127) k = 127;
+            if (k < 0) k = 0;
+            pmKValues[j] = k;
+        }
+
+        // Auto-scale attenuation
+        double tempAttenuation = maxK / 127.0;
+        if (tempAttenuation > attenuation) {
+            attenuation = tempAttenuation;
+        }
+
+        pmMaxK = maxK;
+        fftFrameReady = true;  // Signal Core 1 to draw
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[PKTMON] Core 0: FFT task exiting");
+    #endif
+    vTaskDelete(NULL);
+}
+
+static void startFftTask() {
+    if (pmFftTaskHandle) return;
+    pmFftTaskRunning = true;
+    fftFrameReady = false;
+    xTaskCreatePinnedToCore(pmFftTask, "PktMonFFT", 8192, NULL, 1, &pmFftTaskHandle, 0);
+}
+
+static void stopFftTask() {
+    pmFftTaskRunning = false;
+    if (pmFftTaskHandle) {
+        unsigned long t0 = millis();
+        while (pmFftTaskHandle && (millis() - t0 < 500)) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (pmFftTaskHandle) {
+            vTaskDelete(pmFftTaskHandle);
+        }
+        pmFftTaskHandle = NULL;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CORE 1 DRAWING — Reads k-values from shared buffer, draws waterfall + area graph
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void drawFftFrame() {
+    const unsigned int center_x = SCREEN_WIDTH / 2;
+    const unsigned int half_width = min((int)(FFT_SAMPLES >> 1), (int)center_x);
+    const unsigned int icon_bar_bottom = 36;
+    const unsigned int area_graph_y = icon_bar_bottom + 2;
+    const unsigned int area_graph_height = 50;
+    const unsigned int waterfall_y = area_graph_y + area_graph_height + 3;
+
+    // ─── WATERFALL — mirrored from center ────────────────────────────────
+    for (int j = 0; j < (int)half_width; j++) {
+        int k = pmKValues[j];
+        unsigned int color = palette_red[k] << 11 | palette_green[k] << 5 | palette_blue[k];
+        tft.drawPixel(center_x + j, epoch + waterfall_y, color);
+        tft.drawPixel(center_x - j - 1, epoch + waterfall_y, color);
+    }
+
+    // ─── AREA GRAPH — RIGHT SIDE ────────────────────────────────────────
+    static int last_y[256] = {0};
+
+    tft.fillRect(center_x, area_graph_y, half_width, area_graph_height, HALEHOUND_BLACK);
+    for (int j = 0; j < (int)half_width; j++) {
+        int k = pmKValues[j];
+        unsigned int color = palette_red[k] << 11 | palette_green[k] << 5 | palette_blue[k];
+        int current_y = area_graph_height - map(k, 0, 127, 0, area_graph_height) + area_graph_y;
+        unsigned int x = center_x + j;
+        if (j > 0) {
+            tft.fillTriangle(x - 1, area_graph_y + area_graph_height, x, area_graph_y + area_graph_height, x - 1, last_y[j - 1], color);
+            tft.fillTriangle(x - 1, last_y[j - 1], x, area_graph_y + area_graph_height, x, current_y, color);
+        }
+        last_y[j] = current_y;
+    }
+
+    // ─── AREA GRAPH — LEFT SIDE (mirrored) ──────────────────────────────
+    tft.fillRect(0, area_graph_y, half_width, area_graph_height, HALEHOUND_BLACK);
+    for (int j = 0; j < (int)half_width; j++) {
+        int k = pmKValues[j];
+        unsigned int color = palette_red[k] << 11 | palette_green[k] << 5 | palette_blue[k];
+        int current_y = area_graph_height - map(k, 0, 127, 0, area_graph_height) + area_graph_y;
+        unsigned int x = center_x - j - 1;
+        if (j > 0 && x > 0) {
+            tft.fillTriangle(x + 1, area_graph_y + area_graph_height, x, area_graph_y + area_graph_height, x + 1, last_y[j - 1], color);
+            tft.fillTriangle(x + 1, last_y[j - 1], x, area_graph_y + area_graph_height, x, current_y, color);
+        }
+        last_y[j] = current_y;
+    }
+
+    // ─── STATUS INFO BAR ────────────────────────────────────────────────
+    tft.fillRect(30, 20, 130, 16, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_MAGENTA);
+    tft.setTextSize(1);
+    tft.setCursor(35, 24);
+    tft.print("Ch:");
+    tft.print(currentChannel);
+    tft.setCursor(80, 24);
+    tft.print("Pkt:");
+    tft.print(pmDisplayPktCount);
+
+    // Advance waterfall epoch
+    const unsigned int waterfall_start = 91;
+    const unsigned int waterfall_height = SCREEN_HEIGHT - waterfall_start;
+    epoch++;
+    if (epoch >= waterfall_height) {
+        epoch = 0;
+    }
+}
+
+// Legacy single-core function kept for reference but no longer called
 // Perform FFT sampling and display - DYNAMIC LAYOUT FOR CYD PORTRAIT
 static void doSamplingFFT() {
     unsigned long microseconds = micros();
@@ -370,8 +558,11 @@ void setup() {
 
     initialized = true;
 
+    // Start Core 0 FFT task
+    startFftTask();
+
     #if CYD_DEBUG
-    Serial.println("[PKTMON] Ready on channel " + String(currentChannel));
+    Serial.println("[PKTMON] Ready on channel " + String(currentChannel) + " — Core 0 FFT active");
     #endif
 }
 
@@ -437,27 +628,14 @@ void loop() {
     // Run UI updates (icon animation, status bar)
     drawStatusBar();
 
-    // Set channel and run promiscuous mode
-    esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
-    esp_wifi_set_promiscuous_rx_cb(&wifiPromiscuousCB);
-    esp_wifi_set_promiscuous(true);
-
-    // Perform FFT sampling and display
-    doSamplingFFT();
-
-    // Update epoch for waterfall - wraps at available waterfall height
-    // Layout: icon_bar_bottom=36, area_graph=38-88, waterfall starts at 91
-    const unsigned int waterfall_start = 91;
-    const unsigned int waterfall_height = SCREEN_HEIGHT - waterfall_start;
-    epoch++;
-    if (epoch >= waterfall_height) {
-        epoch = 0;
+    // ═══════════════════════════════════════════════════════════════════════
+    // DUAL-CORE DISPLAY — Core 0 computes FFT, Core 1 draws from buffer
+    // No more 51ms blocking — touch stays responsive at all times
+    // ═══════════════════════════════════════════════════════════════════════
+    if (fftFrameReady) {
+        drawFftFrame();         // Draws waterfall + area graph + status from pmKValues[]
+        fftFrameReady = false;  // Signal Core 0 to compute next frame
     }
-
-    // Reset counters each cycle
-    packetCounter = 0;
-    deauthCounter = 0;
-    rssiSum = 0;
 }
 
 void setChannel(int channel) {
@@ -505,6 +683,9 @@ bool isExitRequested() {
 }
 
 void cleanup() {
+    // Stop Core 0 FFT task first
+    stopFftTask();
+
     esp_wifi_set_promiscuous(false);
     esp_wifi_set_promiscuous_rx_cb(NULL);
     WiFi.disconnect(true);
@@ -512,9 +693,10 @@ void cleanup() {
     delay(50);
     initialized = false;
     exitRequested = false;
+    fftFrameReady = false;
 
     #if CYD_DEBUG
-    Serial.println("[PKTMON] Cleanup complete");
+    Serial.println("[PKTMON] Cleanup complete — Core 0 FFT task terminated");
     #endif
 }
 
