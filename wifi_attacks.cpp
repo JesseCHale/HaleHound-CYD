@@ -59,6 +59,7 @@ static Preferences preferences;
 
 static TaskHandle_t pmFftTaskHandle = NULL;
 static volatile bool pmFftTaskRunning = false;
+static volatile bool pmFftTaskDone = false;
 
 // Shared FFT results — Core 0 writes, Core 1 reads when fftFrameReady
 #define PM_HALF_WIDTH 120   // max(FFT_SAMPLES/2, SCREEN_WIDTH/2) = 128, clamped to 120
@@ -193,12 +194,15 @@ static void pmFftTask(void* param) {
     #if CYD_DEBUG
     Serial.println("[PKTMON] Core 0: FFT task exiting");
     #endif
+    pmFftTaskHandle = NULL;
+    pmFftTaskDone = true;
     vTaskDelete(NULL);
 }
 
 static void startFftTask() {
     if (pmFftTaskHandle) return;
     pmFftTaskRunning = true;
+    pmFftTaskDone = false;
     fftFrameReady = false;
     xTaskCreatePinnedToCore(pmFftTask, "PktMonFFT", 8192, NULL, 1, &pmFftTaskHandle, 0);
 }
@@ -206,13 +210,12 @@ static void startFftTask() {
 static void stopFftTask() {
     pmFftTaskRunning = false;
     if (pmFftTaskHandle) {
+        // Wait for task to self-delete (it sets pmFftTaskDone before vTaskDelete(NULL))
         unsigned long t0 = millis();
-        while (pmFftTaskHandle && (millis() - t0 < 500)) {
+        while (!pmFftTaskDone && (millis() - t0 < 500)) {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
-        if (pmFftTaskHandle) {
-            vTaskDelete(pmFftTaskHandle);
-        }
+        // Task already deleted itself — just clear the handle
         pmFftTaskHandle = NULL;
     }
 }
