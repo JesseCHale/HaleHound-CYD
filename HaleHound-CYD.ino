@@ -570,6 +570,7 @@ void handleWiFiSubmenuTouch() {
                     PacketMonitor::setup();
                     while (!feature_exit_requested) {
                         PacketMonitor::loop();
+                        if (PacketMonitor::isExitRequested()) feature_exit_requested = true;
                         touchButtonsUpdate();
                         if (isBackButtonTapped()) feature_exit_requested = true;
                     }
@@ -946,6 +947,7 @@ void handleSubGHzSubmenuTouch() {
                     ReplayAttack::setup();
                     while (!feature_exit_requested) {
                         ReplayAttack::loop();
+                        if (ReplayAttack::isExitRequested()) feature_exit_requested = true;
                         touchButtonsUpdate();
                         if (isBackButtonTapped()) feature_exit_requested = true;
                     }

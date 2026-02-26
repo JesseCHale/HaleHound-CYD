@@ -197,7 +197,161 @@ static void initPalette() {
     paletteInitialized = true;
 }
 
-// FFT Waterfall sampling and display
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE FFT ENGINE
+// Core 0: RSSI sampling + FFT compute (CPU-intensive, ~51ms per frame)
+// Core 1: Waterfall drawing + touch/buttons + auto-scan
+// CC1101 SPI access protected by mutex (both cores need it)
+// ═══════════════════════════════════════════════════════════════════════════
+
+static SemaphoreHandle_t cc1101Mtx = NULL;
+static TaskHandle_t fftTaskHandle = NULL;
+static volatile bool fftTaskRunning = false;
+
+// Shared FFT result buffer — Core 0 writes, Core 1 reads
+#define FFT_LINE_WIDTH 120  // half of 240px screen width
+static volatile int fftKValues[FFT_LINE_WIDTH];
+static volatile int fftMaxK = 0;
+static volatile bool fftFrameReady = false;
+
+static inline bool cc1101Lock(TickType_t timeout = pdMS_TO_TICKS(100)) {
+    return cc1101Mtx && xSemaphoreTake(cc1101Mtx, timeout) == pdTRUE;
+}
+static inline void cc1101Unlock() {
+    if (cc1101Mtx) xSemaphoreGive(cc1101Mtx);
+}
+
+// Core 0 FFT task — samples RSSI + computes FFT, stores results for Core 1 to draw
+static void fftTask(void* param) {
+    fftTaskRunning = true;
+
+    while (!exitRequested && initialized) {
+        // Wait for previous frame to be drawn before overwriting
+        if (fftFrameReady) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
+
+        #define ALPHA_TASK 0.2f
+        float ewmaRSSI = -50;
+
+        // Acquire CC1101 mutex for RSSI sampling (~51ms)
+        if (!cc1101Lock(pdMS_TO_TICKS(200))) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
+        unsigned long microseconds = micros();
+        for (int i = 0; i < FFT_SAMPLES_SUB; i++) {
+            int rssi = ELECHOUSE_cc1101.getRssi();
+            rssi += 100;
+            ewmaRSSI = (ALPHA_TASK * rssi) + ((1 - ALPHA_TASK) * ewmaRSSI);
+            vRealSUB[i] = ewmaRSSI * 2;
+            vImagSUB[i] = 1;
+            while (micros() - microseconds < sampling_period_sub) { }
+            microseconds += sampling_period_sub;
+        }
+
+        cc1101Unlock();  // Release CC1101 — FFT compute doesn't need SPI
+
+        // DC offset removal
+        double mean = 0;
+        for (uint16_t i = 0; i < FFT_SAMPLES_SUB; i++) mean += vRealSUB[i];
+        mean /= FFT_SAMPLES_SUB;
+        for (uint16_t i = 0; i < FFT_SAMPLES_SUB; i++) vRealSUB[i] -= mean;
+
+        // FFT compute
+        FFTSUB.windowing(vRealSUB, FFT_SAMPLES_SUB, FFTWindow::Hamming, FFTDirection::Forward);
+        FFTSUB.compute(vRealSUB, vImagSUB, FFT_SAMPLES_SUB, FFTDirection::Forward);
+        FFTSUB.complexToMagnitude(vRealSUB, vImagSUB, FFT_SAMPLES_SUB);
+
+        // Compute k-values for each pixel position
+        const unsigned int half_width = FFT_LINE_WIDTH;
+        float scale = (float)half_width / (float)(FFT_SAMPLES_SUB >> 1);
+        int maxK = 0;
+
+        for (int j = 0; j < (int)half_width; j++) {
+            int fft_idx = (int)(j / scale);
+            if (fft_idx >= (FFT_SAMPLES_SUB >> 1)) fft_idx = (FFT_SAMPLES_SUB >> 1) - 1;
+            int k = vRealSUB[fft_idx] / attenuation_sub;
+            if (k > maxK) maxK = k;
+            if (k > 127) k = 127;
+            if (k < 0) k = 0;
+            fftKValues[j] = k;
+        }
+
+        fftMaxK = maxK;
+        fftFrameReady = true;
+
+        vTaskDelay(1);
+    }
+
+    fftTaskRunning = false;
+    vTaskDelete(NULL);
+}
+
+static void startFFTTask() {
+    if (fftTaskHandle != NULL) return;
+    if (cc1101Mtx == NULL) cc1101Mtx = xSemaphoreCreateMutex();
+    xTaskCreatePinnedToCore(fftTask, "fftSample", 8192, NULL, 1, &fftTaskHandle, 0);
+}
+
+static void stopFFTTask() {
+    // exitRequested already set by caller — task checks it
+    if (fftTaskHandle == NULL) return;
+
+    unsigned long start = millis();
+    while (fftTaskRunning && (millis() - start < 500)) {
+        delay(10);
+    }
+
+    if (fftTaskRunning) {
+        vTaskDelete(fftTaskHandle);
+    }
+
+    fftTaskHandle = NULL;
+    fftTaskRunning = false;
+}
+
+// Core 1: Draw one waterfall line from shared FFT buffer
+static void drawWaterfallLine() {
+    if (!fftFrameReady) return;
+
+    const unsigned int center_x = SCREEN_WIDTH / 2;
+    const unsigned int half_width = FFT_LINE_WIDTH;
+    const unsigned int waterfall_y = 55;
+    const unsigned int waterfall_height = SCREEN_HEIGHT - waterfall_y - 5;
+
+    // Right side waterfall
+    for (int j = 0; j < (int)half_width; j++) {
+        int k = fftKValues[j];
+        unsigned int color = palette_red[k] << 11 | palette_green[k] << 5 | palette_blue[k];
+        tft.drawPixel(center_x + j, epoch_sub + waterfall_y, color);
+    }
+
+    // Left side waterfall (mirrored)
+    for (int j = 0; j < (int)half_width; j++) {
+        int k = fftKValues[j];
+        unsigned int color = palette_red[k] << 11 | palette_green[k] << 5 | palette_blue[k];
+        tft.drawPixel(center_x - j - 1, epoch_sub + waterfall_y, color);
+    }
+
+    // Auto-scale attenuation
+    double tattenuation = fftMaxK / 127.0;
+    if (tattenuation > attenuation_sub) {
+        attenuation_sub = tattenuation;
+    }
+
+    // Advance waterfall row
+    epoch_sub++;
+    if (epoch_sub >= waterfall_height) {
+        epoch_sub = 0;
+    }
+
+    fftFrameReady = false;
+}
+
+// Legacy single-threaded FFT (kept for reference, replaced by fftTask + drawWaterfallLine)
 static void doSamplingFFT() {
     unsigned long microseconds = micros();
 
@@ -322,20 +476,25 @@ static void updateDisplay() {
         tft.print("b");
     }
 
-    // RSSI
+    // RSSI + CC1101 tune (mutex protects from Core 0 FFT sampling)
+    int rssi = -99;
+    if (cc1101Lock(pdMS_TO_TICKS(60))) {
+        rssi = ELECHOUSE_cc1101.getRssi();
+
+        // Tune CC1101
+        ELECHOUSE_cc1101.setSidle();
+        if (autoScanEnabled) {
+            ELECHOUSE_cc1101.setMHZ(frequencyList[autoScanIndex] / 1000000.0);
+        } else {
+            ELECHOUSE_cc1101.setMHZ(frequencyList[currentFreqIndex] / 1000000.0);
+        }
+        ELECHOUSE_cc1101.SetRx();
+        cc1101Unlock();
+    }
+
     tft.setCursor(190, 40);
-    int rssi = ELECHOUSE_cc1101.getRssi();
     tft.setTextColor(rssi > -60 ? HALEHOUND_HOTPINK : HALEHOUND_VIOLET);
     tft.print(rssi);
-
-    // Tune CC1101
-    ELECHOUSE_cc1101.setSidle();
-    if (autoScanEnabled) {
-        ELECHOUSE_cc1101.setMHZ(frequencyList[autoScanIndex] / 1000000.0);
-    } else {
-        ELECHOUSE_cc1101.setMHZ(frequencyList[currentFreqIndex] / 1000000.0);
-    }
-    ELECHOUSE_cc1101.SetRx();
 }
 
 // Icon bar configuration - MATCHES ORIGINAL (5 icons)
@@ -689,14 +848,20 @@ void setup() {
     initPalette();
     epoch_sub = 0;
     attenuation_sub = 10;
+    fftFrameReady = false;
+    fftTaskHandle = NULL;
+    fftTaskRunning = false;
 
     drawUI();
     updateDisplay();
 
     initialized = true;
 
+    // Launch Core 0 FFT sampling task
+    startFFTTask();
+
     #if CYD_DEBUG
-    Serial.println("[SUBGHZ] Ready on " + String(frequencyList[currentFreqIndex] / 1000000.0, 3) + " MHz");
+    Serial.printf("[SUBGHZ] Ready on %.3f MHz (FFT on Core 0)\n", frequencyList[currentFreqIndex] / 1000000.0);
     #endif
 }
 
@@ -807,20 +972,26 @@ void loop() {
                 autoScanIndex = (autoScanIndex + 1) % frequencyCount;
                 autoScanLastChange = now;
 
-                // Tune CC1101
-                ELECHOUSE_cc1101.setSidle();
-                ELECHOUSE_cc1101.setMHZ(frequencyList[autoScanIndex] / 1000000.0);
-                ELECHOUSE_cc1101.SetRx();
+                // Tune CC1101 (mutex protects from Core 0 FFT sampling)
+                if (cc1101Lock(pdMS_TO_TICKS(60))) {
+                    ELECHOUSE_cc1101.setSidle();
+                    ELECHOUSE_cc1101.setMHZ(frequencyList[autoScanIndex] / 1000000.0);
+                    ELECHOUSE_cc1101.SetRx();
+                    cc1101Unlock();
+                }
 
                 updateDisplay();
             }
 
             // Check RSSI for signal
-            int rssi = ELECHOUSE_cc1101.getRssi();
-            if (rssi > AUTO_SCAN_RSSI_THRESHOLD) {
-                autoScanPaused = true;
-                autoScanPauseTime = now;
-                updateDisplay();
+            if (cc1101Lock(pdMS_TO_TICKS(10))) {
+                int rssi = ELECHOUSE_cc1101.getRssi();
+                cc1101Unlock();
+                if (rssi > AUTO_SCAN_RSSI_THRESHOLD) {
+                    autoScanPaused = true;
+                    autoScanPauseTime = now;
+                    updateDisplay();
+                }
             }
         }
     }
@@ -870,8 +1041,8 @@ void loop() {
         }
     }
 
-    // FFT waterfall
-    doSamplingFFT();
+    // FFT waterfall — Core 0 samples + computes, Core 1 draws
+    drawWaterfallLine();
 }
 
 bool isExitRequested() {
@@ -879,6 +1050,10 @@ bool isExitRequested() {
 }
 
 void cleanup() {
+    // Stop Core 0 FFT task first
+    exitRequested = true;
+    stopFFTTask();
+
     // Stop RMT RX
     if (rmtRxInitialized) {
         rmt_rx_stop(RMT_RX_CHANNEL);
@@ -896,8 +1071,15 @@ void cleanup() {
     ELECHOUSE_cc1101.setSidle();
     spiDeselect();
 
+    // Clean up mutex
+    if (cc1101Mtx) {
+        vSemaphoreDelete(cc1101Mtx);
+        cc1101Mtx = NULL;
+    }
+
     initialized = false;
     exitRequested = false;
+    fftFrameReady = false;
 
     #if CYD_DEBUG
     Serial.println("[SUBGHZ] Cleanup complete");
@@ -926,9 +1108,12 @@ void setFrequencyIndex(int index) {
     if (index >= frequencyCount) index = 0;
     currentFreqIndex = index;
 
-    ELECHOUSE_cc1101.setSidle();
-    ELECHOUSE_cc1101.setMHZ(frequencyList[currentFreqIndex] / 1000000.0);
-    ELECHOUSE_cc1101.SetRx();
+    if (cc1101Lock(pdMS_TO_TICKS(60))) {
+        ELECHOUSE_cc1101.setSidle();
+        ELECHOUSE_cc1101.setMHZ(frequencyList[currentFreqIndex] / 1000000.0);
+        ELECHOUSE_cc1101.SetRx();
+        cc1101Unlock();
+    }
 
     #if CYD_DEBUG
     Serial.println("[SUBGHZ] Frequency: " + String(frequencyList[currentFreqIndex] / 1000000.0, 3) + " MHz");
@@ -1041,9 +1226,12 @@ void sendSignal(unsigned long value, int bitLength, int protocol) {
     #endif
     delay(50);
 
-    // Switch CC1101 to TX mode at max power
-    ELECHOUSE_cc1101.setPA(12);
-    ELECHOUSE_cc1101.SetTx();
+    // Switch CC1101 to TX mode at max power (mutex protects from Core 0 FFT)
+    if (cc1101Lock(pdMS_TO_TICKS(200))) {
+        ELECHOUSE_cc1101.setPA(12);
+        ELECHOUSE_cc1101.SetTx();
+        cc1101Unlock();
+    }
 
     tft.fillRect(0, 100, SCREEN_WIDTH, 80, HALEHOUND_BLACK);
     tft.setTextColor(HALEHOUND_HOTPINK);
@@ -1075,7 +1263,10 @@ void sendSignal(unsigned long value, int bitLength, int protocol) {
     tft.print("[+] Done!");
 
     // Switch back to RX
-    ELECHOUSE_cc1101.SetRx();
+    if (cc1101Lock(pdMS_TO_TICKS(200))) {
+        ELECHOUSE_cc1101.SetRx();
+        cc1101Unlock();
+    }
     delay(100);
     #ifdef NMRF_HAT
     resumeRmtRx();  // Hat: restart RMT RX after TX done
@@ -1283,12 +1474,23 @@ static const int frequencyCount = sizeof(frequencyListMHz) / sizeof(frequencyLis
 // ═══════════════════════════════════════════════════════════════════════════
 static bool initialized = false;
 static bool exitRequested = false;
-static bool jamming = false;
-static bool continuousMode = true;   // true = carrier, false = noise
-static bool autoSweep = false;
-static int currentFreqIndex = 10;    // Default to 433.920 MHz
-static unsigned long lastSweepTime = 0;
+static volatile bool jamming = false;
+static volatile bool continuousMode = true;   // true = carrier, false = noise
+static volatile bool autoSweep = false;
+static volatile int currentFreqIndex = 10;    // Default to 433.920 MHz
+static volatile unsigned long lastSweepTime = 0;
 static unsigned long lastDisplayTime = 0;
+static volatile bool freqChanged = false;     // Core 1 sets, Core 0 reads
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE TASK MANAGEMENT
+// Core 0: CC1101 TX engine (frequency sweep + jam signal)
+// Core 1: Display + touch (Arduino main loop)
+// ═══════════════════════════════════════════════════════════════════════════
+
+static TaskHandle_t sjTaskHandle = NULL;
+static volatile bool sjTaskRunning = false;
+
 #define SWEEP_INTERVAL_MS 50
 
 // Equalizer heat levels
@@ -1638,6 +1840,81 @@ static void drawSkulls() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CORE 0 JAM TASK — CC1101 TX engine (frequency sweep + jam signal)
+// Core 0 owns ALL CC1101 SPI access while jamming is active
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void sjJamTask(void* param) {
+    sjTaskRunning = true;
+    unsigned long sweepTime = millis();
+
+    while (jamming) {
+        // Check if Core 1 requested a frequency change
+        if (freqChanged) {
+            ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
+            ELECHOUSE_cc1101.SetTx();
+            freqChanged = false;
+        }
+
+        // Auto-sweep frequency hopping
+        if (autoSweep && millis() - sweepTime >= SWEEP_INTERVAL_MS) {
+            currentFreqIndex = (currentFreqIndex + 1) % frequencyCount;
+            ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
+            ELECHOUSE_cc1101.SetTx();
+            sweepTime = millis();
+            lastSweepTime = sweepTime;  // Expose for display
+        }
+
+        // Transmit jam signal
+        if (continuousMode) {
+            // Continuous carrier - hold TX
+            ELECHOUSE_cc1101.SpiWriteReg(CC1101_TXFIFO, 0xFF);
+            ELECHOUSE_cc1101.SpiStrobe(CC1101_STX);
+            digitalWrite(CC1101_GDO0, HIGH);
+        } else {
+            // Noise mode - random pulses
+            for (int i = 0; i < 10; i++) {
+                uint32_t noise = random(16777216);
+                ELECHOUSE_cc1101.SpiWriteReg(CC1101_TXFIFO, noise >> 16);
+                ELECHOUSE_cc1101.SpiWriteReg(CC1101_TXFIFO, (noise >> 8) & 0xFF);
+                ELECHOUSE_cc1101.SpiWriteReg(CC1101_TXFIFO, noise & 0xFF);
+                ELECHOUSE_cc1101.SpiStrobe(CC1101_STX);
+                delayMicroseconds(50);
+            }
+        }
+
+        vTaskDelay(1);  // Yield to watchdog
+    }
+
+    sjTaskRunning = false;
+    vTaskDelete(NULL);
+}
+
+static void startJamTask() {
+    if (sjTaskHandle != NULL) return;
+    xTaskCreatePinnedToCore(sjJamTask, "subJam", 4096, NULL, 1, &sjTaskHandle, 0);
+}
+
+static void stopJamTask() {
+    jamming = false;
+    if (sjTaskHandle == NULL) return;
+
+    // Wait for task to finish (500ms timeout)
+    unsigned long start = millis();
+    while (sjTaskRunning && (millis() - start < 500)) {
+        delay(10);
+    }
+
+    // Force kill if task didn't exit cleanly
+    if (sjTaskRunning) {
+        vTaskDelete(sjTaskHandle);
+    }
+
+    sjTaskHandle = NULL;
+    sjTaskRunning = false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SETUP
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1645,6 +1922,9 @@ void setup() {
     exitRequested = false;
     jamming = false;
     skullFrame = 0;
+    freqChanged = false;
+    sjTaskHandle = NULL;
+    sjTaskRunning = false;
     memset(channelHeat, 0, sizeof(channelHeat));
 
     #if CYD_DEBUG
@@ -1786,36 +2066,8 @@ void loop() {
         return;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // JAMMING LOGIC (CC1101 radio - unchanged from original)
-    // ═══════════════════════════════════════════════════════════════════════
-    if (jamming) {
-        // Auto-sweep frequency hopping
-        if (autoSweep && millis() - lastSweepTime >= SWEEP_INTERVAL_MS) {
-            currentFreqIndex = (currentFreqIndex + 1) % frequencyCount;
-            ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
-            ELECHOUSE_cc1101.SetTx();
-            lastSweepTime = millis();
-        }
-
-        // Transmit jam signal
-        if (continuousMode) {
-            // Continuous carrier - hold TX
-            ELECHOUSE_cc1101.SpiWriteReg(CC1101_TXFIFO, 0xFF);
-            ELECHOUSE_cc1101.SpiStrobe(CC1101_STX);
-            digitalWrite(CC1101_GDO0, HIGH);
-        } else {
-            // Noise mode - random pulses
-            for (int i = 0; i < 10; i++) {
-                uint32_t noise = random(16777216);
-                ELECHOUSE_cc1101.SpiWriteReg(CC1101_TXFIFO, noise >> 16);
-                ELECHOUSE_cc1101.SpiWriteReg(CC1101_TXFIFO, (noise >> 8) & 0xFF);
-                ELECHOUSE_cc1101.SpiWriteReg(CC1101_TXFIFO, noise & 0xFF);
-                ELECHOUSE_cc1101.SpiStrobe(CC1101_STX);
-                delayMicroseconds(50);
-            }
-        }
-    }
+    // Jam engine runs on Core 0 (sjJamTask)
+    // Frequency sweep + TX all handled by Core 0
 
     // ═══════════════════════════════════════════════════════════════════════
     // DISPLAY UPDATE (throttled at ~12fps for smooth equalizer animation)
@@ -1833,20 +2085,25 @@ void loop() {
 
 void start() {
     if (!jamming) {
-        jamming = true;
+        // CC1101 init before task launch — sequential, no contention
         ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
         ELECHOUSE_cc1101.SetTx();
         lastSweepTime = millis();
+        jamming = true;
+
+        startJamTask();  // Launch Core 0 TX engine
 
         #if CYD_DEBUG
-        Serial.println("[JAMMER] Started on " + String(frequencyListMHz[currentFreqIndex], 3) + " MHz");
+        Serial.printf("[JAMMER] Started on %.3f MHz (Core 0)\n", frequencyListMHz[currentFreqIndex]);
         #endif
     }
 }
 
 void stop() {
     if (jamming) {
-        jamming = false;
+        stopJamTask();  // Kill Core 0 task first
+
+        // CC1101 cleanup — task is dead, safe to access from Core 1
         ELECHOUSE_cc1101.setSidle();
         digitalWrite(CC1101_GDO0, LOW);
 
@@ -1876,9 +2133,10 @@ void setFrequency(float mhz) {
             break;
         }
     }
-    ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
     if (jamming) {
-        ELECHOUSE_cc1101.SetTx();
+        freqChanged = true;  // Core 0 task will retune CC1101
+    } else {
+        ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
     }
 }
 
@@ -1888,17 +2146,19 @@ float getFrequency() {
 
 void nextFrequency() {
     currentFreqIndex = (currentFreqIndex + 1) % frequencyCount;
-    ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
     if (jamming) {
-        ELECHOUSE_cc1101.SetTx();
+        freqChanged = true;  // Core 0 task will retune CC1101
+    } else {
+        ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
     }
 }
 
 void prevFrequency() {
     currentFreqIndex = (currentFreqIndex - 1 + frequencyCount) % frequencyCount;
-    ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
     if (jamming) {
-        ELECHOUSE_cc1101.SetTx();
+        freqChanged = true;  // Core 0 task will retune CC1101
+    } else {
+        ELECHOUSE_cc1101.setMHZ(frequencyListMHz[currentFreqIndex]);
     }
 }
 
@@ -1935,8 +2195,9 @@ bool isExitRequested() {
 
 void cleanup() {
     if (jamming) {
-        stop();
+        stop();  // Kills Core 0 task + CC1101 cleanup
     }
+    stopJamTask();  // Belt and suspenders — ensure task is dead
     ELECHOUSE_cc1101.setSidle();
     spiDeselect();
 

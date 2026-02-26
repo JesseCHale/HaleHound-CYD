@@ -1483,18 +1483,23 @@ static const char* EDDYSTONE_URL_PRESET = "google.com";
 // ═══════════════════════════════════════════════════════════════════════════
 
 static bool initialized = false;
-static bool beaconing = false;
+static volatile bool beaconing = false;
 static bool exitRequested = false;
-static int currentMode = BCN_RANDOM_IBEACON;
+static volatile int currentMode = BCN_RANDOM_IBEACON;
 
-static unsigned long lastBroadcast = 0;
-static uint32_t packetCount = 0;
-static unsigned long rateWindowStart = 0;
-static uint32_t rateWindowCount = 0;
-static uint16_t currentRate = 0;
-static int geoFenceStep = 0;
+static volatile uint32_t packetCount = 0;
+static volatile uint32_t rateWindowCount = 0;
+static volatile uint16_t currentRate = 0;
+static volatile int geoFenceStep = 0;
 
-#define BCN_INTERVAL_MS 100  // 10 beacons/sec (realistic beacon rate)
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAL-CORE TASK MANAGEMENT
+// Core 0: BLE broadcast engine (doBroadcast loop)
+// Core 1: Display + touch (Arduino main loop)
+// ═══════════════════════════════════════════════════════════════════════════
+
+static TaskHandle_t bcnTaskHandle = NULL;
+static volatile bool bcnTaskRunning = false;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SCROLLING LOG
@@ -1507,8 +1512,8 @@ static int geoFenceStep = 0;
 
 static char bcnLogLines[BCN_LOG_MAX_LINES][42];
 static uint16_t bcnLogColors[BCN_LOG_MAX_LINES];
-static int bcnLogCount = 0;
-static bool bcnLogDirty = false;
+static volatile int bcnLogCount = 0;
+static volatile bool bcnLogDirty = false;  // Core 0 sets via bcnAddLog, Core 1 reads in bcnDrawLog
 
 static unsigned long lastDisplayUpdate = 0;
 
@@ -1633,6 +1638,36 @@ static void bcnDrawHeader() {
 
     if (beaconing) {
         // Animated gradient pulse: cyan → hot pink → cyan
+        int phase = (millis() / 100) % 16;
+        float ratio = (phase < 8) ? (phase / 7.0f) : ((16 - phase) / 8.0f);
+        uint8_t r = (uint8_t)(ratio * 255);
+        uint8_t g = 207 - (uint8_t)(ratio * (207 - 28));
+        uint8_t b = 255 - (uint8_t)(ratio * (255 - 82));
+        tft.drawBitmap(220, 102, bitmap_icon_signal, 16, 16, tft.color565(r, g, b));
+    }
+}
+
+// Lightweight rate-only update — no fillRect clear on title/mode areas
+// Called in 100ms display loop instead of full bcnDrawHeader()
+static void bcnDrawRate() {
+    // Rate display bar only (Y=102-114)
+    tft.fillRect(0, 102, 215, 12, TFT_BLACK);
+    tft.setTextColor(beaconing ? HALEHOUND_HOTPINK : HALEHOUND_GUNMETAL, TFT_BLACK);
+    tft.setCursor(5, 103);
+    tft.printf("Rate: %d bcn/s", currentRate);
+
+    // Packet count in mode bar (right side, Y=86)
+    if (packetCount > 0) {
+        tft.fillRect(165, 84, 70, 12, TFT_BLACK);
+        char cntBuf[14];
+        snprintf(cntBuf, sizeof(cntBuf), "%lu pkt", packetCount);
+        tft.setCursor(170, 86);
+        tft.setTextColor(HALEHOUND_VIOLET, TFT_BLACK);
+        tft.print(cntBuf);
+    }
+
+    // Animated signal icon
+    if (beaconing) {
         int phase = (millis() / 100) % 16;
         float ratio = (phase < 8) ? (phase / 7.0f) : ((16 - phase) / 8.0f);
         uint8_t r = (uint8_t)(ratio * 255);
@@ -1940,27 +1975,87 @@ static void doBroadcast() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CORE 0 BROADCAST TASK — Runs doBroadcast() as fast as BLE allows
+// BLE advertising has inherent ~21ms per cycle (delay(1) + delay(20))
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void bcnTxTask(void* param) {
+    bcnTaskRunning = true;
+    unsigned long rateStart = millis();
+
+    while (beaconing) {
+        // Heap safety — BLEAdvertisementData allocates std::string on heap
+        if (esp_get_free_heap_size() < 8192) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        doBroadcast();  // Increments packetCount and rateWindowCount
+
+        // Update rate counter every second
+        unsigned long now = millis();
+        if (now - rateStart >= 1000) {
+            currentRate = (uint16_t)rateWindowCount;
+            rateWindowCount = 0;
+            rateStart = now;
+        }
+
+        // Yield — delay(20) in doBroadcast already yields, but belt and suspenders
+        vTaskDelay(1);
+    }
+
+    bcnTaskRunning = false;
+    vTaskDelete(NULL);
+}
+
+static void startBcnTask() {
+    if (bcnTaskHandle != NULL) return;
+    xTaskCreatePinnedToCore(bcnTxTask, "bleBeacon", 8192, NULL, 1, &bcnTaskHandle, 0);
+}
+
+static void stopBcnTask() {
+    beaconing = false;
+    if (bcnTaskHandle == NULL) return;
+
+    // Wait for task to finish (500ms timeout)
+    unsigned long start = millis();
+    while (bcnTaskRunning && (millis() - start < 500)) {
+        delay(10);
+    }
+
+    // Force kill if task didn't exit cleanly
+    if (bcnTaskRunning) {
+        vTaskDelete(bcnTaskHandle);
+    }
+
+    bcnTaskHandle = NULL;
+    bcnTaskRunning = false;
+
+    // Stop any lingering advertising
+    esp_ble_gap_stop_advertising();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // CONTROL FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
 static void startBeacon() {
     beaconing = true;
-    lastBroadcast = 0;
-    rateWindowStart = millis();
     rateWindowCount = 0;
     bcnAddLog("[!] BEACON STARTED", HALEHOUND_HOTPINK);
     bcnDrawIconBar();
     bcnDrawHeader();
     bcnDrawLog();
 
+    startBcnTask();  // Launch Core 0 broadcast engine
+
     #if CYD_DEBUG
-    Serial.printf("[BEACON] Started - Mode: %s\n", BCN_MODE_NAMES[currentMode]);
+    Serial.printf("[BEACON] Started - Mode: %s (Core 0)\n", BCN_MODE_NAMES[currentMode]);
     #endif
 }
 
 static void stopBeacon() {
-    esp_ble_gap_stop_advertising();
-    beaconing = false;
+    stopBcnTask();  // Stop Core 0 task first
     bcnAddLog("[!] BEACON STOPPED", HALEHOUND_HOTPINK);
     bcnDrawIconBar();
     bcnDrawHeader();
@@ -2023,12 +2118,13 @@ void setup() {
     exitRequested = false;
     packetCount = 0;
     currentRate = 0;
-    rateWindowStart = millis();
     rateWindowCount = 0;
     bcnLogCount = 0;
     bcnSkullFrame = 0;
     geoFenceStep = 0;
     currentMode = BCN_RANDOM_IBEACON;
+    bcnTaskHandle = NULL;
+    bcnTaskRunning = false;
 
     // Draw full UI
     bcnDrawIconBar();
@@ -2101,23 +2197,8 @@ void loop() {
     if (buttonPressed(BTN_RIGHT)) nextMode();
     if (buttonPressed(BTN_SELECT)) toggleBeacon();
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // BROADCAST ENGINE (100ms interval = 10 beacons/sec)
-    // ═══════════════════════════════════════════════════════════════════════
-    if (beaconing) {
-        unsigned long now = millis();
-        if (now - lastBroadcast >= BCN_INTERVAL_MS) {
-            doBroadcast();
-            lastBroadcast = now;
-        }
-
-        // Update rate counter every second
-        if (now - rateWindowStart >= 1000) {
-            currentRate = rateWindowCount;
-            rateWindowCount = 0;
-            rateWindowStart = now;
-        }
-    }
+    // Broadcast engine runs on Core 0 (bcnTxTask)
+    // Rate calculation also runs on Core 0
 
     // Feed the watchdog
     yield();
@@ -2129,7 +2210,7 @@ void loop() {
         bcnDrawSkulls();
         bcnDrawCounter();
         bcnDrawLog();
-        bcnDrawHeader();
+        bcnDrawRate();  // Lightweight — only rate + pkt count, no full header clear
         lastDisplayUpdate = millis();
     }
 }
@@ -2139,13 +2220,10 @@ bool isExitRequested() {
 }
 
 void cleanup() {
-    if (beaconing) {
-        esp_ble_gap_stop_advertising();
-    }
+    stopBcnTask();  // Stop Core 0 task before BLE teardown
 
     BLEDevice::deinit(false);  // false = library bug: deinit(true) never resets initialized flag
 
-    beaconing = false;
     initialized = false;
     exitRequested = false;
     bcnLogDirty = false;
@@ -5575,13 +5653,22 @@ void loop() {
             wpDoScan();
         }
 
-        // Touch to select device
+        // Touch to select device — list items draw at y=98 with WP_LINE_HEIGHT spacing
         int visCount = wpCount - wpListStart;
         if (visCount > WP_MAX_VISIBLE) visCount = WP_MAX_VISIBLE;
-        int touched = getTouchedMenuItem(60, WP_LINE_HEIGHT, visCount);
+        int touched = getTouchedMenuItem(98, WP_LINE_HEIGHT, visCount);
         if (touched >= 0) {
             wpCurIdx = wpListStart + touched;
+            wpDrawList();          // highlight before probe
             wpProbeDevice(wpCurIdx);
+        }
+
+        // Touch bottom bar area to rescan (no BTN_LEFT touch zone on CYD)
+        {
+            uint16_t bx, by;
+            if (getTouchPoint(&bx, &by) && by >= SCREEN_HEIGHT - 18) {
+                wpDoScan();
+            }
         }
     } else {
         // Result view — LEFT returns to list
