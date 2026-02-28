@@ -216,7 +216,7 @@ bool wardrivingStart() {
     }
 
     // WiGLE v1.6 CSV header — pre-header line + column header
-    logFile.println("WigleWifi-1.6,appRelease=HaleHound-CYD,model=ESP32-CYD,release=2.9.0,device=HaleHound,display=CYD,board=ESP32,brand=JesseCHale,star=Sol,body=3,subBody=0");
+    logFile.println("WigleWifi-1.6,appRelease=HaleHound-CYD,model=ESP32-CYD,release=3.0.0,device=HaleHound,display=CYD,board=ESP32,brand=JesseCHale,star=Sol,body=3,subBody=0");
     logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
     logFile.flush();
 

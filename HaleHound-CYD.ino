@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // HaleHound-CYD Main Firmware
 // ESP32 Cheap Yellow Display Edition
-// v2.9.0 — Wardriving BLE scan, open net tracking, GPS auto-init
+// v3.0.0 — Dual-core engine, SubGHz Analyzer overhaul, Evil Twin SD logging
 // Created: 2026-02-06
 // ═══════════════════════════════════════════════════════════════════════════
 //
