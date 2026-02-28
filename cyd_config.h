@@ -18,7 +18,7 @@
 // FIRMWARE VERSION — single source of truth
 // ═══════════════════════════════════════════════════════════════════════════
 
-#define FW_VERSION "v2.9.0"
+#define FW_VERSION "v3.0.0"
 
 #ifdef NMRF_HAT
   #define FW_EDITION   "CYD-HAT Edition"
