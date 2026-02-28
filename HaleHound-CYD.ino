@@ -606,7 +606,9 @@ void handleWiFiSubmenuTouch() {
                     }
                     // Check if user wants to spawn Evil Twin
                     if (DeauthDetect::isEvilTwinRequested()) {
-                        const char* ssid = DeauthDetect::getSelectedSSID();
+                        char ssid[33];
+                        strncpy(ssid, DeauthDetect::getSelectedSSID(), 32);
+                        ssid[32] = '\0';
                         DeauthDetect::clearEvilTwinRequest();
                         DeauthDetect::cleanup();
                         // Set SSID and launch Captive Portal
@@ -649,7 +651,9 @@ void handleWiFiSubmenuTouch() {
                         }
                         Deauther::cleanup();
                     } else if (WifiScan::isCloneRequested()) {
-                        const char* ssid = WifiScan::getSelectedSSID();
+                        char ssid[33];
+                        strncpy(ssid, WifiScan::getSelectedSSID(), 32);
+                        ssid[32] = '\0';
                         WifiScan::clearAttackRequest();
                         WifiScan::cleanup();
                         CaptivePortal::setSSID(ssid);
