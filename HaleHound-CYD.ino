@@ -45,6 +45,7 @@
 #include "karma_attack.h"
 #include "saved_captures.h"
 #include "radio_test.h"
+#include "iot_recon.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBAL OBJECTS
@@ -184,13 +185,14 @@ const unsigned char *subghz_submenu_icons[subghz_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_go_back
 };
 
-// SIGINT Submenu - 5 items
-const int sigint_NUM_SUBMENU_ITEMS = 5;
+// SIGINT Submenu - 6 items
+const int sigint_NUM_SUBMENU_ITEMS = 6;
 const char *sigint_submenu_items[sigint_NUM_SUBMENU_ITEMS] = {
     "EAPOL Capture",
     "Karma Attack",
     "Wardriving",
     "Saved Captures",
+    "IoT Recon",
     "Back to Main Menu"
 };
 
@@ -199,6 +201,7 @@ const unsigned char *sigint_submenu_icons[sigint_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_spoofer,
     bitmap_icon_follow,
     bitmap_icon_floppy2,
+    bitmap_icon_scanner,
     bitmap_icon_go_back
 };
 
@@ -1060,7 +1063,7 @@ void handleSIGINTSubmenuTouch() {
             displaySubmenu();
             delay(200);
 
-            if (current_submenu_index == 4) { // Back
+            if (current_submenu_index == 5) { // Back
                 returnToMainMenu();
                 return;
             }
@@ -1104,6 +1107,15 @@ void handleSIGINTSubmenuTouch() {
                         if (isBackButtonTapped()) feature_exit_requested = true;
                     }
                     SavedCaptures::cleanup();
+                    break;
+                case 4: // IoT Recon
+                    IotRecon::setup();
+                    while (!feature_exit_requested) {
+                        IotRecon::loop();
+                        if (IotRecon::isExitRequested()) feature_exit_requested = true;
+                        if (digitalRead(0) == LOW) feature_exit_requested = true;
+                    }
+                    IotRecon::cleanup();
                     break;
             }
 
