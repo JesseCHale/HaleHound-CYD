@@ -30,7 +30,7 @@
 // MAX LIMITS
 // =============================================================================
 
-#define IOT_MAX_DEVICES     64
+#define IOT_MAX_DEVICES     48
 #define IOT_MAX_PORTS       8
 #define IOT_MAX_BANNER_LEN  48
 #define IOT_MAX_CRED_USER   16
