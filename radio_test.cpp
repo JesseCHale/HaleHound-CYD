@@ -236,11 +236,11 @@ static void runCC1101Test(int statusY, int hintY) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WIRING DIAGRAMS — Duggie's KiCad layouts as TFT block diagrams
-// 4 pages: text reference + NRF24 diagram + GPS diagram + CC1101 diagram
+// 5 pages: text reference + NRF24 diagram + GPS diagram + CC1101 diagram + PN532 diagram
 // ═══════════════════════════════════════════════════════════════════════════
 
 static int wiringPage = 0;
-#define WIRING_NUM_PAGES 4
+#define WIRING_NUM_PAGES 6
 
 // Diagram layout constants
 #define DIAG_LEFT_X     5
@@ -366,10 +366,28 @@ static void drawWiringText() {
     tft.setCursor(10, y);  tft.print("GDO0=TX(out) GDO2=RX(in)");
     y += lineH + 6;
 
+    // PN532 section
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.setCursor(10, y);
+    tft.print("--- PN532 RFID (13.56 MHz) ---");
+    y += lineH + 2;
+
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setCursor(10, y);  tft.print("VCC  = 3.3V     GND = GND");
+    y += lineH;
+    tft.setCursor(10, y);  tft.printf("CS   = GPIO %-3d SCK = GPIO %d", PN532_CS, VSPI_SCK);
+    y += lineH;
+    tft.setCursor(10, y);  tft.printf("MOSI = GPIO %-3d MISO= GPIO %d", VSPI_MOSI, VSPI_MISO);
+    y += lineH;
+
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(10, y);  tft.print("DIP: Both switches SPI mode");
+    y += lineH + 6;
+
     // Shared SPI note
     tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
     tft.setCursor(10, y);
-    tft.print("Both radios + SD share VSPI bus");
+    tft.print("All radios + SD + PN532 = VSPI");
     y += lineH;
     tft.setCursor(10, y);
     tft.printf("SD CS = GPIO %d", SD_CS);
@@ -486,7 +504,7 @@ static void drawCC1101Diagram() {
     tft.fillScreen(TFT_BLACK);
     drawStatusBar();
     drawInoIconBar();
-    drawGlitchTitle(SCALE_Y(60), "CC1101 WIRING");
+    drawGlitchTitle(SCALE_Y(60), "CC1101 HW-863");
 
     tft.setTextFont(1);
     tft.setTextSize(1);
@@ -540,13 +558,138 @@ static void drawCC1101Diagram() {
     drawPageNav(3, WIRING_NUM_PAGES);
 }
 
+// ── Page 4: CC1101 E07-433M20S PA module block diagram ──
+static void drawCC1101PADiagram() {
+    tft.fillScreen(TFT_BLACK);
+    drawStatusBar();
+    drawInoIconBar();
+    drawGlitchTitle(SCALE_Y(60), "CC1101 E07-PA");
+
+    tft.setTextFont(1);
+    tft.setTextSize(1);
+
+    int pinSpace = SCALE_Y(16);
+    int boxY = SCALE_Y(78);
+    int boxH = 10 * pinSpace + 22;
+
+    // Left box — ESP32
+    tft.drawRect(DIAG_LEFT_X, boxY, DIAG_LEFT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_LEFT_X + 1, boxY + 1, DIAG_LEFT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_LEFT_X + 25, boxY + 4);
+    tft.print("ESP32");
+
+    // Right box — E07-433M20S
+    tft.drawRect(DIAG_RIGHT_X, boxY, DIAG_RIGHT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_RIGHT_X + 1, boxY + 1, DIAG_RIGHT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_RIGHT_X + 6, boxY + 4);
+    tft.print("E07-433M20S");
+
+    // Pin traces — same base as HW-863 plus TX_EN/RX_EN
+    int py = boxY + 20;
+    drawPinTrace(py, "3.3V",  "VCC",     TFT_RED,           false);  py += pinSpace;
+    drawPinTrace(py, "GND",   "GND",     TFT_WHITE,         false);  py += pinSpace;
+    { char csLabel[8]; snprintf(csLabel, sizeof(csLabel), "IO%d", CC1101_CS);
+    drawPinTrace(py, csLabel,  "CS",      HALEHOUND_MAGENTA, false); }  py += pinSpace;
+    drawPinTrace(py, "IO18",  "SCK",     TFT_CYAN,          false);  py += pinSpace;
+    drawPinTrace(py, "IO23",  "MOSI",    TFT_CYAN,          false);  py += pinSpace;
+    drawPinTrace(py, "IO19",  "MISO",    TFT_CYAN,          false);  py += pinSpace;
+    drawPinTrace(py, "IO22",  "GDO0 TX", HALEHOUND_HOTPINK, false);  py += pinSpace;
+    drawPinTrace(py, "IO35",  "GDO2 RX", TFT_YELLOW,        false);  py += pinSpace;
+#ifdef CC1101_TX_EN
+    { char txLabel[8]; snprintf(txLabel, sizeof(txLabel), "IO%d", CC1101_TX_EN);
+    drawPinTrace(py, txLabel, "TX_EN",   TFT_GREEN,         false); }  py += pinSpace;
+#else
+    drawPinTrace(py, "IO26",  "TX_EN",   TFT_GREEN,         false);  py += pinSpace;
+#endif
+#ifdef CC1101_RX_EN
+    { char rxLabel[8]; snprintf(rxLabel, sizeof(rxLabel), "IO%d", CC1101_RX_EN);
+    drawPinTrace(py, rxLabel, "RX_EN",   TFT_GREEN,         false); }
+#else
+    drawPinTrace(py, "IO0",   "RX_EN",   TFT_GREEN,         false);
+#endif
+
+    // Notes
+    int noteY = boxY + boxH + 4;
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.print("TX_EN=HIGH:transmit RX_EN=HIGH:receive");
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(5, noteY + 13);
+    tft.print("Enable: Settings > CC1101 > E07 PA");
+
+    drawPageNav(4, WIRING_NUM_PAGES);
+}
+
+// ── Page 5: PN532 RFID block diagram ──
+static void drawPN532Diagram() {
+    tft.fillScreen(TFT_BLACK);
+    drawStatusBar();
+    drawInoIconBar();
+    drawGlitchTitle(SCALE_Y(60), "PN532 WIRING");
+
+    tft.setTextFont(1);
+    tft.setTextSize(1);
+
+    int pinSpace = SCALE_Y(22);
+    int boxY = SCALE_Y(85);
+    int boxH = 6 * pinSpace + 22;
+
+    // Left box — ESP32
+    tft.drawRect(DIAG_LEFT_X, boxY, DIAG_LEFT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_LEFT_X + 1, boxY + 1, DIAG_LEFT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_LEFT_X + 25, boxY + 4);
+    tft.print("ESP32");
+
+    // Right box — PN532
+    tft.drawRect(DIAG_RIGHT_X, boxY, DIAG_RIGHT_W, boxH, HALEHOUND_MAGENTA);
+    tft.drawRect(DIAG_RIGHT_X + 1, boxY + 1, DIAG_RIGHT_W - 2, boxH - 2, HALEHOUND_DARK);
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(DIAG_RIGHT_X + 14, boxY + 4);
+    tft.print("PN532 V3");
+
+    // Pin traces
+    int py = boxY + 22;
+    drawPinTrace(py, "3.3V",  "VCC",  TFT_RED,            false);  py += pinSpace;
+    drawPinTrace(py, "GND",   "GND",  TFT_WHITE,          false);  py += pinSpace;
+    { char csLabel[8]; snprintf(csLabel, sizeof(csLabel), "IO%d", PN532_CS);
+    drawPinTrace(py, csLabel, "SS",   HALEHOUND_MAGENTA,  false); }  py += pinSpace;
+    drawPinTrace(py, "IO18",  "SCK",  TFT_CYAN,           false);  py += pinSpace;
+    drawPinTrace(py, "IO23",  "MOSI", TFT_CYAN,           false);  py += pinSpace;
+    drawPinTrace(py, "IO19",  "MISO", TFT_CYAN,           false);
+
+    // Notes
+    int noteY = boxY + boxH + 6;
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.print("DIP: Both switches to SPI mode");
+    noteY += 14;
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.print("LSBFIRST SPI (lib handles auto)");
+    noteY += 14;
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.print("Shares VSPI with NRF24+CC1101+SD");
+    noteY += 14;
+    tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+    tft.setCursor(5, noteY);
+    tft.printf("CS=GPIO %d (was NRF24 IRQ, unused)", PN532_CS);
+
+    drawPageNav(5, WIRING_NUM_PAGES);
+}
+
 // Page dispatcher
 static void drawCurrentWiringPage() {
     switch (wiringPage) {
         case 0:  drawWiringText();    break;
         case 1:  drawNrf24Diagram();  break;
         case 2:  drawGpsDiagram();    break;
-        case 3:  drawCC1101Diagram(); break;
+        case 3:  drawCC1101Diagram();   break;
+        case 4:  drawCC1101PADiagram(); break;
+        case 5:  drawPN532Diagram();    break;
         default: drawWiringText();    break;
     }
 }
