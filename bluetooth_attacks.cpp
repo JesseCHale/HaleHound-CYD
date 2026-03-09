@@ -15,9 +15,29 @@
 #include <SPI.h>
 #include "esp_gap_ble_api.h"
 #include "esp_bt_main.h"
+#include "esp_bt.h"
 #include "esp_wifi.h"
 #include <WiFi.h>
 #include "skull_bg.h"
+#include "ble_database.h"
+
+// ── Classic BT memory release ───────────────────────────────────────────
+// ESP32 Bluedroid reserves ~28KB for Classic BT by default.
+// HaleHound only uses BLE — release that memory once, permanently.
+// Must be called BEFORE BLEDevice::init() triggers esp_bt_controller_init().
+static bool g_classicBtReleased = false;
+static void releaseClassicBtMemory() {
+    if (!g_classicBtReleased) {
+        esp_err_t err = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+        if (err == ESP_OK) {
+            g_classicBtReleased = true;
+            Serial.printf("[BLE] Classic BT memory released OK, heap: %u\n", ESP.getFreeHeap());
+        } else {
+            Serial.printf("[BLE] mem_release FAILED: 0x%x, heap: %u\n", err, ESP.getFreeHeap());
+            // Don't set flag — try again next time
+        }
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BLE SPOOFER - Multi-Platform BLE Spam Engine
@@ -1228,6 +1248,7 @@ void setup() {
     delay(200);
 
     // Initialize BLE — must wait for controller to be fully ready before setting TX power
+    releaseClassicBtMemory();
     BLEDevice::init("HaleHound");
     delay(150);  // BLE controller needs time to finish internal init
 
@@ -1389,6 +1410,7 @@ void cleanup() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void bleInit() {
+    releaseClassicBtMemory();
     BLEDevice::init("HaleHound");
 }
 
@@ -2105,6 +2127,7 @@ void setup() {
     delay(200);
 
     // Initialize BLE — wait for controller ready before TX power
+    releaseClassicBtMemory();
     BLEDevice::init("HaleHound");
     delay(150);  // BLE controller needs time to finish internal init
 
@@ -2410,6 +2433,7 @@ void setup() {
     drawStatusBar();
     drawBleScanUI();
 
+    releaseClassicBtMemory();
     BLEDevice::init("");
     delay(150);  // BLE controller needs time after deinit/reinit cycle
 
@@ -2964,6 +2988,7 @@ void setup() {
     drawTitle();
 
     // Init BLE
+    releaseClassicBtMemory();
     BLEDevice::init("");
     delay(150);
 
@@ -3609,6 +3634,7 @@ void setup() {
     tdDrawTitle();
 
     // Init BLE
+    releaseClassicBtMemory();
     BLEDevice::init("");
     delay(150);
 
@@ -5537,18 +5563,27 @@ void setup() {
     tft.fillScreen(HALEHOUND_BLACK);
     drawStatusBar();
 
-    // BLE init (same pattern as BleScan)
+    // Tear down WiFi before BLE init — frees ~50KB heap
+    WiFi.mode(WIFI_OFF);
+    delay(50);
+
+    // BLE init
+    releaseClassicBtMemory();
     BLEDevice::init("");
     delay(150);  // Race condition fix — BLE controller needs time
 
     pBleScan = BLEDevice::getScan();
     if (!pBleScan) {
+        #if CYD_DEBUG
         Serial.println("[BSNIFF] ERROR: getScan() returned NULL");
+        #endif
         exitRequested = true;
         return;
     }
 
     pBleScan->setActiveScan(false);  // PASSIVE — no SCAN_REQ sent, stealth mode
+    pBleScan->setInterval(100);      // Scan timing (wardriving pattern)
+    pBleScan->setWindow(99);         // Near-continuous listening
     pBleScan->setAdvertisedDeviceCallbacks(&snifferCB, true);  // wantDuplicates = true
 
     scanning = true;
@@ -5590,9 +5625,10 @@ void loop() {
     // and device list, causing phantom exits and misfires
     handleTouch();
 
-    // Physical BOOT button only (GPIO0) — no touch zone conflicts
+    // Physical BOOT button — uses IS_BOOT_PRESSED() macro (returns false on E32R28T
+    // where GPIO0 is permanently LOW due to CC1101 E07 PA module)
     static unsigned long lastBootPress = 0;
-    if (digitalRead(0) == LOW && millis() - lastBootPress > 500) {
+    if (IS_BOOT_PRESSED() && millis() - lastBootPress > 500) {
         lastBootPress = millis();
         if (detailView) {
             detailView = false;
@@ -5619,6 +5655,9 @@ void cleanup() {
     detailView = false;
     waitForRelease = false;
     pendingReady = false;
+
+    // Restore WiFi for other modules
+    WiFi.mode(WIFI_STA);
 
     #if CYD_DEBUG
     Serial.println("[BSNIFF] Cleanup complete — deinit(false)");
@@ -6187,6 +6226,7 @@ void setup() {
     drawStatusBar();
     wpDrawHeader();
 
+    releaseClassicBtMemory();
     BLEDevice::init("");
     delay(150);
 
