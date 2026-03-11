@@ -696,13 +696,14 @@ void cleanup() {
     // Stop Core 0 FFT task first
     stopFftTask();
 
-    // Full ESP-IDF level teardown — PM inits WiFi via raw esp_wifi_init/start,
-    // so Arduino WiFi.mode(WIFI_OFF) alone won't properly release the radio.
-    // Must use esp_wifi_stop() + esp_wifi_deinit() to match the raw init.
+    // ESP-IDF level teardown — stop radio but do NOT deinit the WiFi driver.
+    // Deinit desyncs Arduino's lowLevelInitDone flag, breaking WiFi.mode() for
+    // any module that runs after PM. Driver stays initialized but stopped —
+    // Arduino WiFi.mode(WIFI_STA) can restart it cleanly, and raw ESP-IDF
+    // modules handle their own deinit+init in retry loops.
     esp_wifi_set_promiscuous(false);
     esp_wifi_set_promiscuous_rx_cb(NULL);
     esp_wifi_stop();
-    esp_wifi_deinit();
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     delay(50);
@@ -1474,7 +1475,6 @@ void cleanup() {
     WiFi.mode(WIFI_OFF);
     delay(50);
     esp_wifi_stop();
-    esp_wifi_deinit();
     delay(50);
     initialized = false;
     exitRequested = false;
@@ -1565,10 +1565,11 @@ void wifiCleanup() {
     esp_bt_controller_disable();
     esp_bt_controller_deinit();
 
-    // 4. ESP-IDF level teardown — stop and deinit regardless of current state
-    //    These may return errors if already stopped/deinited — that's fine
+    // 4. ESP-IDF level stop — do NOT call esp_wifi_deinit() here.
+    //    Deinit desyncs Arduino's lowLevelInitDone flag — next WiFi.mode(WIFI_STA)
+    //    skips esp_wifi_init() because it thinks the driver is still up, but it's gone.
+    //    Raw ESP-IDF modules (PM, Beacon, Deauther) do their own deinit+init in retry loops.
     esp_wifi_stop();
-    esp_wifi_deinit();
     delay(100);
 
     #if CYD_DEBUG

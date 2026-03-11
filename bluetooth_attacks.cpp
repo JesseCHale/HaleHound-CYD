@@ -22,6 +22,7 @@
 #include "ble_database.h"
 #include <SD.h>
 #include "spi_manager.h"
+#include "wp_loot_viewer.h"
 
 // ── Classic BT memory release ───────────────────────────────────────────
 // ESP32 Bluedroid reserves ~28KB for Classic BT by default.
@@ -5809,6 +5810,7 @@ struct WPAttackResult {
 // ─── Attack State ───────────────────────────────────────────────────────
 static bool inAttack = false;
 static bool inAttackResult = false;
+static bool inLootViewer = false;
 static int  atkResultPage = 0;
 static WPAttackResult wpAtkResult;
 
@@ -5868,6 +5870,7 @@ static void wpDrawHeader() {
     tft.fillRect(0, 20, SCREEN_WIDTH, 16, HALEHOUND_DARK);
     tft.drawBitmap(wpIconX[0], wpIconY, bitmap_icon_undo, 16, 16, HALEHOUND_MAGENTA);
     tft.drawBitmap(wpIconX[1], wpIconY, bitmap_icon_go_back, 16, 16, HALEHOUND_MAGENTA);
+    tft.drawBitmap(112, wpIconY, bitmap_icon_sdcard, 16, 16, HALEHOUND_MAGENTA);
     tft.drawLine(0, 36, SCREEN_WIDTH, 36, HALEHOUND_HOTPINK);
     // Nosifer glitch title — chromatic aberration effect
     drawGlitchTitle(55, "WHISPERPAIR");
@@ -6559,6 +6562,16 @@ static void wpSaveLoot() {
     if (wpProbeIdx < 0) return;
     FPDevice& d = wpDevs[wpProbeIdx];
 
+    // Visual feedback — flash save button green immediately
+    tft.fillRoundRect(5, SCREEN_HEIGHT - 34, 70, 26, 4, 0x07E0);
+    tft.setTextColor(TFT_BLACK);
+    tft.setCursor(15, SCREEN_HEIGHT - 25);
+    tft.print("SAVING");
+
+    #if CYD_DEBUG
+    Serial.printf("[WP-SAVE] wpSaveLoot called — heap: %u\n", ESP.getFreeHeap());
+    #endif
+
     spiDeselect();
     pinMode(SD_CS, OUTPUT);
     digitalWrite(SD_CS, HIGH);
@@ -6566,6 +6579,9 @@ static void wpSaveLoot() {
     if (!SD.begin(SD_CS)) {
         SPI.begin(18, 19, 23, SD_CS);
         if (!SD.begin(SD_CS, SPI, 4000000)) {
+            #if CYD_DEBUG
+            Serial.printf("[WP-SAVE] SD FAILED — heap: %u\n", ESP.getFreeHeap());
+            #endif
             tft.fillRect(5, SCREEN_HEIGHT - 55, SCREEN_WIDTH - 10, 14, HALEHOUND_BLACK);
             tft.setTextColor(0xF800);
             tft.setCursor(10, SCREEN_HEIGHT - 52);
@@ -7014,6 +7030,21 @@ void setup() {
 void loop() {
     if (!wpInit) return;
 
+    // Delegate to loot viewer when active
+    if (inLootViewer) {
+        WPLootViewer::loop();
+        if (WPLootViewer::isExitRequested()) {
+            WPLootViewer::cleanup();
+            inLootViewer = false;
+            waitForTouchRelease();   // Prevent back-tap from bleeding into WhisperPair
+            tft.fillScreen(HALEHOUND_BLACK);
+            drawStatusBar();
+            wpDrawHeader();
+            wpDrawList();
+        }
+        return;
+    }
+
     touchButtonsUpdate();
 
     // Icon bar touch handling
@@ -7042,6 +7073,15 @@ void loop() {
                     }
                     lastTap = millis();
                     return;
+                }
+                else if (tx >= 96 && tx < 144) {
+                    // Loot viewer icon — generous touch zone around x=112
+                    if (!inResult && !inAttackResult && !inAttack) {
+                        inLootViewer = true;
+                        WPLootViewer::setup();
+                        lastTap = millis();
+                        return;
+                    }
                 }
                 else if (tx >= 210 && tx < 226) {
                     // Rescan icon
@@ -7124,28 +7164,22 @@ void loop() {
             }
         }
     } else if (inAttackResult) {
-        // Attack report — page navigation + save
-        if (buttonPressed(BTN_RIGHT) || buttonPressed(BTN_DOWN)) {
-            if (atkResultPage < 1) { atkResultPage++; wpDrawAttackReport(); }
-        }
-        if (buttonPressed(BTN_LEFT) || buttonPressed(BTN_UP)) {
-            if (atkResultPage > 0) { atkResultPage--; wpDrawAttackReport(); }
-        }
-        if (buttonPressed(BTN_SELECT)) {
+        // SAVE — BTN_DOWN zone (x=0-80,y=260-320) covers the save button perfectly
+        if (buttonPressed(BTN_DOWN) || buttonPressed(BTN_SELECT)) {
             wpSaveLoot();
+            waitForTouchRelease();
         }
 
-        // Touch: SAVE (left) or page nav (right)
-        uint16_t rtx, rty;
-        if (getTouchPoint(&rtx, &rty) && rty >= SCREEN_HEIGHT - 38) {
-            if (rtx < 80) {
-                wpSaveLoot();
-                waitForTouchRelease();
-            } else if (rtx > SCREEN_WIDTH - 70) {
-                atkResultPage = (atkResultPage == 0) ? 1 : 0;
-                waitForTouchRelease();
-                wpDrawAttackReport();
-            }
+        // Page nav — BTN_BACK zone (x=160-240,y=0-60) or BTN_UP zone (x=0-80,y=0-60)
+        if (buttonPressed(BTN_BACK)) {
+            atkResultPage = (atkResultPage == 0) ? 1 : 0;
+            wpDrawAttackReport();
+        }
+        if (buttonPressed(BTN_RIGHT)) {
+            if (atkResultPage < 1) { atkResultPage++; wpDrawAttackReport(); }
+        }
+        if (buttonPressed(BTN_LEFT)) {
+            if (atkResultPage > 0) { atkResultPage--; wpDrawAttackReport(); }
         }
     } else {
         // Result view — LEFT returns to list
@@ -7181,6 +7215,10 @@ void loop() {
 bool isExitRequested() { return wpExit; }
 
 void cleanup() {
+    if (inLootViewer) {
+        WPLootViewer::cleanup();
+        inLootViewer = false;
+    }
     if (pWpClient) {
         pWpClient->disconnect();
         pWpClient = nullptr;  // deinit cleans up tracked clients
@@ -7192,6 +7230,7 @@ void cleanup() {
     inResult = false;
     inAttack = false;
     inAttackResult = false;
+    inLootViewer = false;
     wpAtkLogCount = 0;
     wpCount = 0;
     wpProbeIdx = -1;

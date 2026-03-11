@@ -47,6 +47,7 @@
 #include "saved_captures.h"
 #include "radio_test.h"
 #include "iot_recon.h"
+#include "loot_manager.h"
 #include "rfid_attacks.h"
 #include "jam_detect.h"
 
@@ -234,14 +235,15 @@ const unsigned char *jamdetect_submenu_icons[jamdetect_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_go_back
 };
 
-// SIGINT Submenu - 6 items
-const int sigint_NUM_SUBMENU_ITEMS = 6;
+// SIGINT Submenu - 7 items
+const int sigint_NUM_SUBMENU_ITEMS = 7;
 const char *sigint_submenu_items[sigint_NUM_SUBMENU_ITEMS] = {
     "EAPOL Capture",
     "Karma Attack",
     "Wardriving",
     "Saved Captures",
     "IoT Recon",
+    "Loot",
     "Back to Main Menu"
 };
 
@@ -251,6 +253,7 @@ const unsigned char *sigint_submenu_icons[sigint_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_follow,
     bitmap_icon_floppy2,
     bitmap_icon_scanner,
+    bitmap_icon_floppy,
     bitmap_icon_go_back
 };
 
@@ -1450,7 +1453,7 @@ void handleSIGINTSubmenuTouch() {
             displaySubmenu();
             delay(200);
 
-            if (current_submenu_index == 5) { // Back
+            if (current_submenu_index == 6) { // Back
                 returnToMainMenu();
                 return;
             }
@@ -1514,6 +1517,15 @@ void handleSIGINTSubmenuTouch() {
                         if (IS_BOOT_PRESSED()) feature_exit_requested = true;
                     }
                     IotRecon::cleanup();
+                    break;
+                case 5: // Loot
+                    LootManager::setup();
+                    while (!feature_exit_requested) {
+                        LootManager::loop();
+                        if (LootManager::isExitRequested()) feature_exit_requested = true;
+                        if (IS_BOOT_PRESSED()) feature_exit_requested = true;
+                    }
+                    LootManager::cleanup();
                     break;
             }
 

@@ -16,7 +16,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #define GPS_UPDATE_INTERVAL_MS  1000    // Update display every 1 second
-#define GPS_TIMEOUT_MS          5000    // Consider GPS stale after 5 seconds
+#define GPS_TIMEOUT_MS          30000   // Consider GPS stale after 30 seconds
+                                        // Wardriving WiFi scans block GPS for 1-3s each cycle;
+                                        // 5s was too aggressive and killed valid between scans
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GPS STATUS ENUM
@@ -105,5 +107,36 @@ void gpsStartBackground();
 
 // Stop GPS background mode — closes UART2, restores Serial
 void gpsStopBackground();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DIAGNOSTICS — TinyGPSPlus counters for debugging data flow
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Total chars read from UART2 (is data flowing?)
+uint32_t gpsCharsProcessed();
+
+// Total NMEA sentences that had valid fix (is GPS holding fix?)
+uint32_t gpsSentencesWithFix();
+
+// Total sentences with bad checksum (UART overflow / corruption?)
+uint32_t gpsFailedChecksums();
+
+// Milliseconds since last valid location update (staleness)
+uint32_t gpsTimeSinceLastUpdate();
+
+// '$' characters seen (should match sentence count if data is NMEA)
+uint32_t gpsDollarsSeen();
+
+// Sentences that passed checksum (valid NMEA sentences parsed)
+uint32_t gpsPassedChecksums();
+
+// Raw data preview — last 32 chars from UART2 (for debugging bad data)
+const char* gpsRawDataPreview();
+
+// Direct TinyGPSPlus satellite value — bypasses currentData
+int32_t gpsRawSatValue();
+
+// How many times gps.satellites.isUpdated() fired in gpsUpdate()
+uint32_t gpsSatUpdateCount();
 
 #endif // GPS_MODULE_H

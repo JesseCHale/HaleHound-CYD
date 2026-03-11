@@ -30,12 +30,15 @@ extern TFT_eSPI tft;
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-#define WD_SCAN_INTERVAL_MS    2500    // WiFi scan every 2.5 seconds
+#define WD_SCAN_INTERVAL_MS    1000    // Delay between scan completions
+                                        // WiFi scans are async so touch stays responsive
 #define WD_DISPLAY_INTERVAL_MS  500    // Update display every 500ms
 #define WD_BLINK_INTERVAL_MS    400    // Record indicator blink rate
-#define WD_BLE_SCAN_SECONDS       3    // BLE passive scan duration
+#define WD_BLE_SCAN_SECONDS       2    // BLE passive scan duration (2s catches most devices)
+#define WD_BLE_EVERY_N            3    // BLE scan every Nth cycle (WiFi all other cycles)
 
-// Scan phase — alternates between WiFi and BLE each cycle
+// Scan phase — WiFi dominant, BLE every Nth cycle for better coverage at speed
+// At 30mph (~44 ft/s) an AP's range is ~5-7s. Need WiFi scan every ~3s to catch it.
 #define WD_PHASE_WIFI  0
 #define WD_PHASE_BLE   1
 
@@ -73,13 +76,21 @@ static bool wdBlinkState = false;
 static uint32_t wdScanCount = 0;
 static esp_err_t wdLastScanErr = ESP_OK;  // Track scan errors for TFT display
 static uint8_t wdScanPhase = WD_PHASE_WIFI;
+static uint32_t wdScanCycle = 0;           // Cycle counter for WiFi/BLE ratio
 static unsigned long wdSessionStart = 0;   // millis() when session started
 
 // BLE scan state — volatile callback queue (same pattern as BleSniffer)
 static BLEScan* wdBleScan = nullptr;
 
+// BLE scan completion flag — set by callback, polled with timeout
+static volatile bool wdBleScanDone = false;
+
+static void wdBleScanCompleteCB(BLEScanResults results) {
+    wdBleScanDone = true;
+}
+
 // Temp buffer for BLE results — process after scan completes
-#define WD_BLE_RESULT_MAX 32
+#define WD_BLE_RESULT_MAX 24
 struct WdBleResult {
     uint8_t mac[6];
     int8_t  rssi;
@@ -295,33 +306,26 @@ static void updateWDValues() {
     tft.fillRect(WD_COL_L_VAL3, WD_STATS_Y + SCALE_H(20), SCALE_W(65), 8, HALEHOUND_BLACK);
     tft.setCursor(WD_COL_L_VAL3, WD_STATS_Y + SCALE_H(20));
     if (wdLastScanErr != ESP_OK) {
-        // Show error code in red so it's visible on TFT
+        // Show error in red — clear after one successful scan so it doesn't stick
         tft.setTextColor(0xF800);
-        tft.printf("E:0x%X", wdLastScanErr);
+        tft.print("ERR");
     } else {
         tft.setTextColor(stats.active ? HALEHOUND_MAGENTA : HALEHOUND_GUNMETAL);
         tft.print(wdScanCount);
     }
 
-    // STATUS value — shows current scan phase
+    // STATUS value — shows current scan phase (WiFi dominant, BLE every Nth)
     tft.fillRect(SCALE_X(170), WD_STATS_Y + SCALE_H(20), SCALE_W(65), 8, HALEHOUND_BLACK);
     tft.setCursor(SCALE_X(170), WD_STATS_Y + SCALE_H(20));
     if (stats.active) {
+        bool isBle = (wdScanCycle % WD_BLE_EVERY_N == (WD_BLE_EVERY_N - 1));
         if (wdBlinkState) {
             tft.setTextColor(HALEHOUND_HOTPINK);
-            if (wdScanPhase == WD_PHASE_BLE) {
-                tft.print("BLE");
-            } else {
-                tft.print("WIFI");
-            }
+            tft.print(isBle ? "BLE" : "WIFI");
             tft.fillCircle(SCALE_X(205), WD_STATS_Y + SCALE_H(24), 3, HALEHOUND_HOTPINK);
         } else {
             tft.setTextColor(HALEHOUND_GUNMETAL);
-            if (wdScanPhase == WD_PHASE_BLE) {
-                tft.print("BLE");
-            } else {
-                tft.print("WIFI");
-            }
+            tft.print(isBle ? "BLE" : "WIFI");
             tft.fillCircle(SCALE_X(205), WD_STATS_Y + SCALE_H(24), 3, HALEHOUND_GUNMETAL);
         }
     } else {
@@ -332,11 +336,18 @@ static void updateWDValues() {
     // ── GPS values ──
 
     // GPS fix status
+    // For wardriving, coordinates from a recent fix are still useful even if the
+    // staleness timer set valid=false. Show "STALE" instead of "NO FIX" when we
+    // have non-zero coordinates — they're close enough for WiGLE logging.
+    bool hasPosition = (gpsData.latitude != 0.0 || gpsData.longitude != 0.0);
     tft.fillRect(WD_COL_L_VAL2, WD_GPS_Y, SCALE_W(85), 8, HALEHOUND_BLACK);
     tft.setCursor(WD_COL_L_VAL2, WD_GPS_Y);
     if (gpsData.valid) {
         tft.setTextColor(HALEHOUND_MAGENTA);
         tft.print("FIX OK");
+    } else if (hasPosition) {
+        tft.setTextColor(HALEHOUND_VIOLET);
+        tft.print("STALE");
     } else {
         tft.setTextColor(HALEHOUND_HOTPINK);
         tft.print("NO FIX");
@@ -348,11 +359,15 @@ static void updateWDValues() {
     tft.setCursor(WD_COL_R_VAL, WD_GPS_Y);
     tft.print(gpsData.satellites);
 
-    // LAT value
+    // LAT value — show stale coordinates in VIOLET instead of hiding them
     tft.fillRect(WD_COL_L_VAL2, WD_GPS_Y + SCALE_H(12), SCALE_W(90), 8, HALEHOUND_BLACK);
     tft.setCursor(WD_COL_L_VAL2, WD_GPS_Y + SCALE_H(12));
     if (gpsData.valid) {
         tft.setTextColor(HALEHOUND_MAGENTA);
+        snprintf(buf, sizeof(buf), "%.4f", gpsData.latitude);
+        tft.print(buf);
+    } else if (hasPosition) {
+        tft.setTextColor(HALEHOUND_VIOLET);
         snprintf(buf, sizeof(buf), "%.4f", gpsData.latitude);
         tft.print(buf);
     } else {
@@ -360,11 +375,15 @@ static void updateWDValues() {
         tft.print("---");
     }
 
-    // LON value
+    // LON value — show stale coordinates in VIOLET instead of hiding them
     tft.fillRect(SCALE_X(150), WD_GPS_Y + SCALE_H(12), SCALE_W(85), 8, HALEHOUND_BLACK);
     tft.setCursor(SCALE_X(150), WD_GPS_Y + SCALE_H(12));
     if (gpsData.valid) {
         tft.setTextColor(HALEHOUND_MAGENTA);
+        snprintf(buf, sizeof(buf), "%.4f", gpsData.longitude);
+        tft.print(buf);
+    } else if (hasPosition) {
+        tft.setTextColor(HALEHOUND_VIOLET);
         snprintf(buf, sizeof(buf), "%.4f", gpsData.longitude);
         tft.print(buf);
     } else {
@@ -426,59 +445,56 @@ static void updateWDValues() {
         tft.setTextColor(HALEHOUND_HOTPINK);
         tft.print("NO SD CARD");
     }
+
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WIFI SCAN FOR WARDRIVING
 // ═══════════════════════════════════════════════════════════════════════════
 
-static void wdRunScan() {
-    // MUST use Arduino WiFi.scanNetworks() — NOT raw esp_wifi_scan_start().
-    // Arduino's internal SCAN_DONE event handler (_scanDone in WiFiScan.cpp:114)
-    // calls esp_wifi_scan_get_ap_records() which CONSUMES the ESP-IDF scan buffer.
-    // If we use raw esp_wifi_scan_start(), by the time we call esp_wifi_scan_get_ap_num()
-    // the buffer is already empty — Arduino ate the results. WiFi.scanNetworks() stores
-    // the results internally so we can read them through WiFi.SSID(i) etc.
-    int n = WiFi.scanNetworks(false, true);  // blocking, show hidden
+// WiFi scan with per-channel STOP checks.
+// Scans channels 1-13 one at a time (~200ms each). Touch is checked between
+// channels so STOP responds within ~200ms instead of blocking for 3+ seconds.
+// Returns false if user pressed STOP mid-scan (wdScanning already set false).
+static bool wdRunScan() {
+    for (uint8_t ch = 1; ch <= 13; ch++) {
+        // Scan single channel — blocks ~100-200ms
+        int n = WiFi.scanNetworks(false, true, false, 200, ch);
 
-    if (n == WIFI_SCAN_FAILED) {
-        wdLastScanErr = ESP_FAIL;
-        wdScanCount++;
-        return;
-    }
+        if (n > 0) {
+            gpsUpdate();
+            int cap = (n > 64) ? 64 : n;
+            for (int i = 0; i < cap; i++) {
+                wardrivingLogNetwork(
+                    WiFi.BSSID(i),
+                    WiFi.SSID(i).c_str(),
+                    WiFi.RSSI(i),
+                    WiFi.channel(i),
+                    WiFi.encryptionType(i)
+                );
+            }
+        }
 
-    if (n == WIFI_SCAN_RUNNING) {
-        // Shouldn't happen in blocking mode, but handle gracefully
-        wdScanCount++;
-        return;
+        WiFi.scanDelete();
+
+        // Check STOP button between channels — ~200ms responsiveness
+        touchButtonsUpdate();
+        if (isStartStopTapped()) {
+            wardrivingStop();
+            wdScanning = false;
+            wdSessionStart = 0;
+            WiFi.disconnect();
+            drawStartStopButton(false);
+            return false;
+        }
+
+        // Feed GPS between channels
+        gpsUpdate();
     }
 
     wdLastScanErr = ESP_OK;
-
-    if (n == 0) {
-        WiFi.scanDelete();
-        wdScanCount++;
-        return;
-    }
-
-    // Feed GPS before logging so coordinates are fresh
-    gpsUpdate();
-
-    // Log each network through wardriving backend
-    int cap = (n > 64) ? 64 : n;
-    for (int i = 0; i < cap; i++) {
-        wardrivingLogNetwork(
-            WiFi.BSSID(i),
-            WiFi.SSID(i).c_str(),
-            WiFi.RSSI(i),
-            WiFi.channel(i),
-            WiFi.encryptionType(i)
-        );
-    }
-
-    // Free Arduino's internal scan result buffer
-    WiFi.scanDelete();
     wdScanCount++;
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -514,6 +530,7 @@ static void wdRunBleScan() {
     if (!wdBleScan) {
         Serial.println("[WARDRIVING] BLE getScan() returned NULL — skipping BLE phase");
         BLEDevice::deinit(false);
+        // Restart WiFi so wdRunScan() has STA mode ready
         WiFi.mode(WIFI_STA);
         WiFi.disconnect();
         delay(100);
@@ -525,8 +542,41 @@ static void wdRunBleScan() {
     wdBleScan->setInterval(100);
     wdBleScan->setWindow(99);
 
-    // Step 4: Run blocking scan for WD_BLE_SCAN_SECONDS
-    BLEScanResults foundDevices = wdBleScan->start(WD_BLE_SCAN_SECONDS, false);
+    // Step 4: Run NON-BLOCKING scan with timeout
+    // The blocking BLEScan::start() uses m_semaphoreScanEnd.wait() with NO timeout.
+    // If the BLE GAP callback never fires (radio contention after WiFi↔BLE cycling),
+    // it hangs forever — freezing the unit. Non-blocking + poll avoids this.
+    wdBleScanDone = false;
+    wdBleScan->start(WD_BLE_SCAN_SECONDS, wdBleScanCompleteCB, false);
+
+    // Wait with timeout: scan duration + 3 seconds grace period
+    // Check STOP button during wait so user can abort immediately
+    unsigned long bleStart = millis();
+    unsigned long bleTimeout = (WD_BLE_SCAN_SECONDS + 3) * 1000UL;
+    while (!wdBleScanDone && (millis() - bleStart < bleTimeout)) {
+        gpsUpdate();
+        touchButtonsUpdate();
+        if (isStartStopTapped()) {
+            wdBleScan->stop();
+            wdBleScan->clearResults();
+            wdBleScan = nullptr;
+            BLEDevice::deinit(false);
+            WiFi.mode(WIFI_STA);
+            WiFi.disconnect();
+            delay(100);
+            wdScanning = false;
+            wdSessionStart = 0;
+            drawStartStopButton(false);
+            return;
+        }
+        delay(50);
+    }
+    if (!wdBleScanDone) {
+        Serial.println("[WARDRIVING] BLE scan TIMEOUT — forcing stop");
+        wdBleScan->stop();
+    }
+
+    BLEScanResults foundDevices = wdBleScan->getResults();
 
     // Step 5: Process results — copy into temp buffer first
     wdBleResultCount = 0;
@@ -570,7 +620,8 @@ static void wdRunBleScan() {
     wdBleScan = nullptr;
     BLEDevice::deinit(false);
 
-    // Step 7: Restart WiFi for next WiFi scan phase
+    // Step 7: Restart WiFi for next scan phase — working pattern (c7ee6ac).
+    // WiFi must be back in STA mode before wdRunScan() is called.
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     delay(100);
@@ -612,33 +663,27 @@ void wardrivingScreen() {
     wdBleScan = nullptr;
     wdBleResultCount = 0;
 
-    // Disable CC1101 PA module pins during wardriving — wardriving uses WiFi + BLE
-    // only, CC1101 is idle. GPIO 0 (RX_EN) is a strapping pin — if left as OUTPUT
-    // during repeated WiFi↔BLE radio transitions, the radio subsystem can corrupt
-    // its state and crash the chip (~60 seconds in). Setting both PA pins to INPUT
-    // (high-Z) removes the conflict entirely.
-#if defined(CC1101_TX_EN) && defined(CC1101_RX_EN)
-    if (cc1101_pa_module) {
-        pinMode(CC1101_RX_EN, INPUT);   // GPIO 0 — release strapping pin
-        pinMode(CC1101_TX_EN, INPUT);   // GPIO 4 — release TX enable
-        Serial.println("[WARDRIVING] PA module pins set to INPUT (high-Z) for safe radio cycling");
-    }
-#endif
-
-    // Force clean WiFi state — previous module may have used raw esp_wifi_stop()
-    // which desyncs Arduino's _esp_wifi_started flag. WiFi.mode(WIFI_OFF) resets it.
-    WiFi.mode(WIFI_OFF);
-    delay(50);
-
-    // Init WiFi in STA mode for scanning
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    delay(200);
-
-    // Initialize GPS — same sequence as gpsScreen() so it works on first entry
-    // Serial.end() frees GPIO 3 so UART2 can claim it without pin matrix conflict
+    // ── CRITICAL: Kill Serial FIRST — GPIO 1 (UART0 TX) is wired to GPS RX ──
+    // Every Serial.println() sends 115200-baud data to the NEO-6M (9600 baud).
+    // The GPS module interprets random bytes as UBX binary commands, including
+    // cold restart — killing satellite tracking (6→3→0 sats, never recovers).
+    // Serial.end() alone is NOT enough — UART0 TX stays routed to GPIO 1 via
+    // IOMUX even after driver deletion. Must physically detach with pinMode(OUTPUT)
+    // which calls gpio_hal_iomux_func_sel(PIN_FUNC_GPIO), then drive HIGH.
     Serial.end();
-    delay(50);
+    delay(10);
+    pinMode(1, OUTPUT);
+    digitalWrite(1, HIGH);
+
+    // ── DO NOT TOUCH CC1101 PA PINS OR WiFi HERE — BOTH KILL GPS ──
+    // Confirmed by isolation testing (2026-03-11, 10+ hour debug session):
+    //   Test 1: No PA pins, no WiFi.mode       → SAT:5 held 74+ seconds
+    //   Test 2: PA pins restored, no WiFi.mode  → SAT:0 instant death
+    //   Test 3: No PA pins, WiFi.mode restored  → SAT:0 instant death
+    // Both WiFi.mode() and pinMode() on GPIO 0/4 cause radio/power transients
+    // that desensitize the NEO-6M.  WiFi init deferred to START button press.
+    // PA pins stay in their current state (CC1101 dormant during wardriving).
+
     gpsSetup();           // Auto-scans pins/baud on first call, no-op if already initialized
 
     // Start GPS in background — opens UART2 on the found pin
@@ -674,20 +719,29 @@ void wardrivingScreen() {
         // Check start/stop button
         if (isStartStopTapped()) {
             if (wdScanning) {
-                // Stop
+                // Disconnect WiFi but do NOT call WiFi.mode(WIFI_OFF).
+                // WiFi mode transitions cause radio/power transients that kill
+                // GPS satellite tracking.  WiFi stays in STA mode (idle).
                 wardrivingStop();
                 wdScanning = false;
                 wdSessionStart = 0;
+                WiFi.disconnect();
                 drawStartStopButton(false);
             } else {
                 // Start
                 if (wardrivingStart()) {
+                    // Turn WiFi ON now — GPS had quiet RF time to acquire satellites
+                    WiFi.mode(WIFI_STA);
+                    WiFi.disconnect();
+                    delay(200);
+
                     wdScanning = true;
                     wdScanCount = 0;
+                    wdScanCycle = 0;
                     wdScanPhase = WD_PHASE_WIFI;
                     wdSessionStart = millis();
                     drawStartStopButton(true);
-                    // Run first WiFi scan immediately
+                    // Run first WiFi scan immediately (per-channel with STOP checks)
                     wdRunScan();
                     wdLastScan = millis();
                 } else {
@@ -700,16 +754,19 @@ void wardrivingScreen() {
             }
         }
 
-        // Periodic scan — alternating WiFi / BLE phases
+        // ── Periodic scan — WiFi per-channel with STOP checks between channels ──
+        // Each channel blocks ~200ms max, touch checked between channels.
+        // BLE scans have their own internal STOP check in the poll loop.
         if (wdScanning && millis() - wdLastScan >= WD_SCAN_INTERVAL_MS) {
-            if (wdScanPhase == WD_PHASE_WIFI) {
-                wdRunScan();
-                wdScanPhase = WD_PHASE_BLE;
-            } else {
+            if (wdScanCycle % WD_BLE_EVERY_N == (WD_BLE_EVERY_N - 1)) {
                 wdRunBleScan();
-                wdScanPhase = WD_PHASE_WIFI;
+            } else {
+                wdRunScan();  // Returns false if user pressed STOP mid-scan
             }
-            wdLastScan = millis();
+            if (wdScanning) {  // Only advance if we didn't stop
+                wdScanCycle++;
+                wdLastScan = millis();
+            }
         }
 
         // Blink timer

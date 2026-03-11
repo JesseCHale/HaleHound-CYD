@@ -313,8 +313,11 @@ bool wardrivingLogNetwork(
     line += String(rssi);
     line += ",";
 
-    // GPS coordinates
-    if (gpsData.valid) {
+    // GPS coordinates — use last known position even if stale.
+    // WiFi/BLE scans cause brief GPS dropouts; the VOID sentence fix preserves
+    // coordinates in the struct. Stale coords are still accurate enough for
+    // WiGLE — much better than logging 0.0,0.0 for every network.
+    if (gpsData.latitude != 0.0 || gpsData.longitude != 0.0) {
         char lat[16], lon[16], alt[16];
         snprintf(lat, sizeof(lat), "%.6f", gpsData.latitude);
         snprintf(lon, sizeof(lon), "%.6f", gpsData.longitude);
@@ -325,7 +328,7 @@ bool wardrivingLogNetwork(
         line += ",";
         line += alt;
         line += ",";
-        line += "10";  // Accuracy estimate in meters
+        line += gpsData.valid ? "10" : "50";  // Wider accuracy estimate when stale
     } else {
         line += "0.0,0.0,0.0,0";
     }
@@ -418,8 +421,8 @@ bool wardrivingLogBleDevice(
     line += String(rssi);
     line += ",";
 
-    // GPS coordinates
-    if (gpsData.valid) {
+    // GPS coordinates — use last known position even if stale (same logic as WiFi)
+    if (gpsData.latitude != 0.0 || gpsData.longitude != 0.0) {
         char lat[16], lon[16], alt[16];
         snprintf(lat, sizeof(lat), "%.6f", gpsData.latitude);
         snprintf(lon, sizeof(lon), "%.6f", gpsData.longitude);
@@ -430,7 +433,7 @@ bool wardrivingLogBleDevice(
         line += ",";
         line += alt;
         line += ",";
-        line += "10";
+        line += gpsData.valid ? "10" : "50";
     } else {
         line += "0.0,0.0,0.0,0";
     }

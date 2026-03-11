@@ -35,6 +35,13 @@ static unsigned long lastUpdateTime = 0;
 static unsigned long lastDisplayUpdate = 0;
 static unsigned long lastPulseUpdate = 0;
 static int gpsActivePin = -1;           // Which GPIO ended up working
+
+// Raw data capture — last 32 chars from UART2 for diagnostics
+static char gpsRawBuf[33];             // circular capture buffer + null
+static int gpsRawIdx = 0;
+static uint32_t gpsDollarCount = 0;    // '$' chars seen (NMEA sentence starts)
+static uint32_t gpsPassedCount = 0;    // valid checksum sentences
+static uint32_t gpsSatUpdates = 0;     // how many times gps.satellites.isUpdated() fired
 static int gpsActiveBaud = 9600;        // Which baud rate worked
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -719,11 +726,23 @@ void gpsUpdate() {
     while (gpsSerial.available() > 0) {
         char c = gpsSerial.read();
         gps.encode(c);
+
+        // Capture raw chars for diagnostics
+        if (c == '$') gpsDollarCount++;
+        gpsRawBuf[gpsRawIdx] = (c >= 32 && c < 127) ? c : '.';  // printable or dot
+        gpsRawIdx = (gpsRawIdx + 1) % 32;
+        gpsRawBuf[gpsRawIdx] = '\0';
     }
 
-    // Update data structure
-    if (gps.location.isUpdated()) {
-        currentData.valid = gps.location.isValid();
+    // Track valid sentences
+    gpsPassedCount = gps.passedChecksum();
+
+    // Update data structure — ONLY on valid fix.
+    // VOID GPRMC sentences (no fix) must NOT overwrite last good coordinates.
+    // WiFi scans cause brief GPS dropouts; preserving the last valid position
+    // lets wardriving keep logging while GPS re-acquires between scans.
+    if (gps.location.isUpdated() && gps.location.isValid()) {
+        currentData.valid = true;
         currentData.latitude = gps.location.lat();
         currentData.longitude = gps.location.lng();
         currentData.age = gps.location.age();
@@ -744,6 +763,7 @@ void gpsUpdate() {
 
     if (gps.satellites.isUpdated()) {
         currentData.satellites = gps.satellites.value();
+        gpsSatUpdates++;
     }
 
     if (gps.hdop.isUpdated()) {
@@ -790,8 +810,13 @@ void gpsScreen() {
     if (!gpsInitialized) {
         gpsSetup();
     } else {
-        // Re-entry: restart UART2 on the pin found during scan
+        // Re-entry: force clean UART2 restart on the pin found during scan.
+        // end() guarantees _uart=NULL so begin() does full driver install +
+        // uart_set_pin(), properly reclaiming GPIO 3 from UART0's pin matrix.
+        gpsSerial.end();
+        delay(100);
         gpsSerial.begin(gpsActiveBaud, SERIAL_8N1, gpsActivePin, -1);
+        delay(100);
     }
 
     // Draw initial screen
@@ -837,10 +862,19 @@ void gpsScreen() {
         delay(10);
     }
 
-    // Restore debug serial
+    // Close UART2 — do NOT restart Serial (UART0).
+    // GPIO 1 (UART0 TX) is physically wired to the GPS module's RX on P1.
+    // Serial.begin() re-enables UART0 TX on GPIO 1 — txPin=-1 means
+    // "no change" not "disable", so GPIO 1 stays as TX.  Any Serial.println()
+    // then sends 115200-baud garbage to the NEO-6M (9600 baud), which interprets
+    // random bytes as UBX binary commands and cold-restarts — killing satellite
+    // tracking (6→3→0 sats, never recovers).
+    // Fix: end Serial, physically detach GPIO 1 from UART0 via pinMode(OUTPUT),
+    // then drive HIGH (UART idle state).  Serial.println() becomes a no-op.
     gpsSerial.end();
     delay(50);
-    Serial.begin(115200);
+    pinMode(1, OUTPUT);
+    digitalWrite(1, HIGH);
 }
 
 bool gpsHasFix() {
@@ -898,7 +932,22 @@ uint8_t gpsGetSatellites() {
 void gpsStartBackground() {
     // Kill UART0 (Serial) to free GPIO 3 for GPS UART2
     Serial.end();
-    delay(50);
+    delay(10);
+    // Physically detach GPIO 1 from UART0 TX and drive HIGH (UART idle).
+    // GPIO 1 is wired to GPS module's RX on P1. pinMode(OUTPUT) disconnects
+    // the IOMUX routing that Serial.begin() set up, so even if Serial gets
+    // re-initialized elsewhere, GPIO 1 won't carry UART0 TX data.
+    pinMode(1, OUTPUT);
+    digitalWrite(1, HIGH);
+
+    // Force UART2 hard reset — previous screen closed UART2 and opened UART0
+    // on the same GPIO 3. The pin matrix may still have UART0's IOMUX routing
+    // active. Calling end() guarantees _uart is NULL so begin() does a FULL
+    // driver install + uart_set_pin() which switches GPIO 3 from IOMUX mode
+    // (UART0 direct) to GPIO matrix mode (UART2 routed). Without this, begin()
+    // might take the "already initialized" shortcut and skip pin reconfiguration.
+    gpsSerial.end();
+    delay(100);
 
     if (gpsInitialized && gpsActivePin >= 0) {
         // GPS was scanned before — reopen UART2 on the known working pin
@@ -911,6 +960,9 @@ void gpsStartBackground() {
         gpsInitialized = true;
     }
 
+    // Let UART2 hardware stabilize before reading
+    delay(100);
+
     // Drain any garbage from buffer
     while (gpsSerial.available()) gpsSerial.read();
 }
@@ -918,5 +970,61 @@ void gpsStartBackground() {
 void gpsStopBackground() {
     gpsSerial.end();
     delay(50);
-    Serial.begin(115200);
+    // Do NOT restart Serial — GPIO 1 (UART0 TX) is wired to GPS module's RX.
+    // Serial.begin() with txPin=-1 means "no change" — GPIO 1 stays as UART0 TX.
+    // Any Serial.println() then sends 115200-baud garbage to the NEO-6M.
+    // Instead: detach GPIO 1 from UART0 and hold HIGH (UART idle state).
+    pinMode(1, OUTPUT);
+    digitalWrite(1, HIGH);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DIAGNOSTICS — expose TinyGPSPlus counters for wardriving debug
+// ═══════════════════════════════════════════════════════════════════════════
+
+uint32_t gpsCharsProcessed() {
+    return (uint32_t)gps.charsProcessed();
+}
+
+uint32_t gpsSentencesWithFix() {
+    return (uint32_t)gps.sentencesWithFix();
+}
+
+uint32_t gpsFailedChecksums() {
+    return (uint32_t)gps.failedChecksum();
+}
+
+uint32_t gpsTimeSinceLastUpdate() {
+    if (lastUpdateTime == 0) return 99999;
+    return (uint32_t)(millis() - lastUpdateTime);
+}
+
+uint32_t gpsDollarsSeen() {
+    return gpsDollarCount;
+}
+
+uint32_t gpsPassedChecksums() {
+    return gpsPassedCount;
+}
+
+const char* gpsRawDataPreview() {
+    // Return the raw buffer as a linear string (last 32 chars, oldest first)
+    static char out[33];
+    int start = gpsRawIdx;  // current write position = oldest char
+    for (int i = 0; i < 32; i++) {
+        out[i] = gpsRawBuf[(start + i) % 32];
+        if (out[i] == 0) out[i] = ' ';
+    }
+    out[32] = '\0';
+    return out;
+}
+
+// Direct TinyGPSPlus satellite value — bypasses currentData to check parser state
+int32_t gpsRawSatValue() {
+    return gps.satellites.value();
+}
+
+// How many times gps.satellites.isUpdated() returned true
+uint32_t gpsSatUpdateCount() {
+    return gpsSatUpdates;
 }
