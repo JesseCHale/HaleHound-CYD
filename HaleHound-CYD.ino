@@ -4109,8 +4109,8 @@ void setup() {
     Serial.println("[INIT] Touch buttons OK");
 
     // ═══════════════════════════════════════════════════════════════════════
-    // WRONG FIRMWARE DETECTION — catch CYD-HAT firmware on standard CYD
-    // or standard CYD firmware on a hat board BEFORE they waste time debugging
+    // WRONG FIRMWARE DETECTION — NRF24 SPI probe catches pin mismatches
+    // Covers: CYD vs E32R28T (swapped CSN pins), CYD vs CYD-HAT, missing NRF24
     // ═══════════════════════════════════════════════════════════════════════
     {
         // Properly claim SPI for NRF24 check
@@ -4153,34 +4153,38 @@ void setup() {
             Serial.printf("[INIT] Compiled for: %s (CE=%d, CSN=%d)\n", FW_DEVICE, NRF24_CE, NRF24_CSN);
 
             tft.fillScreen(TFT_BLACK);
-            tft.drawRect(5, 5, SCREEN_WIDTH - 10, SCREEN_HEIGHT - 10, HALEHOUND_HOTPINK);
-            tft.drawRect(7, 7, SCREEN_WIDTH - 14, SCREEN_HEIGHT - 14, HALEHOUND_HOTPINK);
+            tft.drawRect(5, 5, SCREEN_WIDTH - 10, SCREEN_HEIGHT - 10, TFT_RED);
+            tft.drawRect(7, 7, SCREEN_WIDTH - 14, SCREEN_HEIGHT - 14, TFT_RED);
 
             drawGlitchTitle(60, "WARNING");
 
             tft.setTextSize(1);
-            drawCenteredText(80, "NRF24 NOT DETECTED", HALEHOUND_HOTPINK, 1);
-            drawCenteredText(100, "You may have flashed the", HALEHOUND_MAGENTA, 1);
-            drawCenteredText(115, "WRONG FIRMWARE", HALEHOUND_HOTPINK, 1);
+            drawCenteredText(85, "NRF24 NOT DETECTED", TFT_RED, 1);
+            drawCenteredText(100, "Wrong firmware for this board?", HALEHOUND_MAGENTA, 1);
 
             tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
-            tft.setCursor(15, 140);
-            tft.printf("This build: %s", FW_EDITION);
-            tft.setCursor(15, 158);
-            tft.printf("Expects: CE=%d CSN=%d", NRF24_CE, NRF24_CSN);
+            tft.setCursor(15, 120);
+            tft.printf("Flashed: %s", FW_EDITION);
+            tft.setCursor(15, 135);
+            tft.printf("NRF24 pins: CE=%d CSN=%d", NRF24_CE, NRF24_CSN);
+
+            drawCenteredText(160, "Flash the correct binary:", HALEHOUND_HOTPINK, 1);
 
             #ifdef NMRF_HAT
-            drawCenteredText(185, "If you DON'T have the", HALEHOUND_MAGENTA, 1);
-            drawCenteredText(200, "NM-RF-Hat, flash the", HALEHOUND_MAGENTA, 1);
-            drawCenteredText(215, "standard CYD firmware", HALEHOUND_HOTPINK, 1);
+            drawCenteredText(180, "HaleHound-CYD.bin", HALEHOUND_BRIGHT, 1);
+            drawCenteredText(195, "(standard CYD without hat)", HALEHOUND_MAGENTA, 1);
+            #elif defined(CYD_E32R28T)
+            drawCenteredText(180, "HaleHound-CYD.bin", HALEHOUND_BRIGHT, 1);
+            drawCenteredText(195, "(if you have a standard CYD)", HALEHOUND_MAGENTA, 1);
             #else
-            drawCenteredText(185, "If you HAVE the NM-RF-Hat", HALEHOUND_MAGENTA, 1);
-            drawCenteredText(200, "flash the CYD-HAT firmware", HALEHOUND_HOTPINK, 1);
-            drawCenteredText(215, "Check hat switch position", HALEHOUND_MAGENTA, 1);
+            drawCenteredText(180, "HaleHound-E32R28T.bin", HALEHOUND_BRIGHT, 1);
+            drawCenteredText(195, "(if you have a QDtech E32R28T)", HALEHOUND_MAGENTA, 1);
+            drawCenteredText(215, "HaleHound-CYD-HAT.bin", HALEHOUND_BRIGHT, 1);
+            drawCenteredText(230, "(if you have the NM-RF-Hat)", HALEHOUND_MAGENTA, 1);
             #endif
 
-            drawCenteredText(245, "Touch screen to continue", HALEHOUND_GUNMETAL, 1);
-            drawCenteredText(260, "(NRF24 features won't work)", HALEHOUND_GUNMETAL, 1);
+            drawCenteredText(255, "Or: no NRF24 wired yet", HALEHOUND_GUNMETAL, 1);
+            drawCenteredText(275, "Touch screen to continue", HALEHOUND_GUNMETAL, 1);
 
             // Wait for touch to continue — don't brick the device, just warn
             while (true) {
