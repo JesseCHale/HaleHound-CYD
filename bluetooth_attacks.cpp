@@ -9461,6 +9461,10 @@ static bool bdUiDrawn = false;
 static unsigned long bdLastDisplay = 0;
 static bool bdBleInitialized = false;
 
+// Dirty-flag redraw — only repaint when state changes
+static bool    bdPrevConnected = false;
+static bool    bdDirty = true;
+
 // ── Icon bar ──────────────────────────────────────────────────────────────
 #define BD_ICON_NUM 3
 static const int bdIconX[BD_ICON_NUM] = {SCALE_X(130), SCALE_X(170), 10};
@@ -9665,6 +9669,8 @@ void setup() {
     bdUiDrawn = false;
     bdLastDisplay = 0;
     bdBleInitialized = false;
+    bdPrevConnected = false;
+    bdDirty = true;
 
     // Allocate state
     if (bd) { free(bd); bd = nullptr; }
@@ -9730,7 +9736,7 @@ void loop() {
         bd->connected = bleKb->isConnected();
         if (bd->connected != wasConnected) {
             // Connection state changed — force redraw
-            bdLastDisplay = 0;
+            bdDirty = true;
             #if CYD_DEBUG
             Serial.printf("[BLE_DUCKY] %s\n", bd->connected ? "DEVICE CONNECTED" : "DEVICE DISCONNECTED");
             #endif
@@ -9755,6 +9761,7 @@ void loop() {
                     bd->injecting = true;
                     bd->keystrokesSent = 0;
                     bd->keystrokesTotal = 0;
+                    bdDirty = true;
                     drawBdDisplay();
                     injectPayload();  // Runs on Core 1 (BLE lib handles its own tasks)
                 }
@@ -9765,7 +9772,7 @@ void loop() {
                 waitForTouchRelease();
                 delay(200);
                 bd->selectedPayload = (bd->selectedPayload + 1) % BD_PAYLOAD_COUNT;
-                drawBdDisplay();
+                bdDirty = true;
                 return;
             }
         }
@@ -9776,10 +9783,11 @@ void loop() {
         return;
     }
 
-    // Update display at 5 Hz
-    if (millis() - bdLastDisplay >= 200) {
+    // Only redraw when state actually changes — prevents screen flash
+    if (bdDirty && millis() - bdLastDisplay >= 100) {
         drawBdDisplay();
         bdLastDisplay = millis();
+        bdDirty = false;
     }
 }
 
