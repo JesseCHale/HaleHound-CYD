@@ -3549,9 +3549,9 @@ void recursiveDeleteSD(File dir) {
 
         if (entry.isDirectory()) {
             recursiveDeleteSD(entry);
-            SD.rmdir(entry.name());
+            SD.rmdir(entry.path());   // path() = full path; name() = filename only (broken!)
         } else {
-            SD.remove(entry.name());
+            SD.remove(entry.path());  // path() = full path; name() = filename only (broken!)
         }
         entry.close();
     }
