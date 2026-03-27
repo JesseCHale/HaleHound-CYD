@@ -2077,7 +2077,7 @@ void loop() {
 
     // ═══════════════════════════════════════════════════════════════════════
     // TOUCH HANDLING - with release detection (prevents repeat triggers)
-    // Icons: Back=10, Toggle=60, Prev=105, Next=140, Sweep=180, Mode=215
+    // Touch zones reference sjIconX[] so they scale with screen size
     // ═══════════════════════════════════════════════════════════════════════
     uint16_t tx, ty;
     if (getTouchPoint(&tx, &ty)) {
@@ -2086,44 +2086,44 @@ void loop() {
             // Wait for touch release to prevent repeated triggers
             waitForTouchRelease();
 
-            // Back icon (x=10)
-            if (tx >= 5 && tx <= 30) {
+            // Back icon (sjIconX[0])
+            if (tx >= (sjIconX[0] - 5) && tx <= (sjIconX[0] + 20)) {
                 if (jamming) stop();
                 exitRequested = true;
                 return;
             }
-            // Toggle icon (x=60)
-            else if (tx >= 50 && tx <= 80) {
+            // Toggle/Start icon (sjIconX[1])
+            else if (tx >= (sjIconX[1] - 10) && tx <= (sjIconX[1] + 20)) {
                 toggle();
                 drawIconBar();
                 drawHeader();
                 return;
             }
-            // Prev freq icon (x=105)
-            else if (tx >= 95 && tx <= 125) {
+            // Prev freq icon (sjIconX[2])
+            else if (tx >= (sjIconX[2] - 10) && tx <= (sjIconX[2] + 20)) {
                 if (!autoSweep) {
                     prevFrequency();
                     drawHeader();
                 }
                 return;
             }
-            // Next freq icon (x=140)
-            else if (tx >= 130 && tx <= 160) {
+            // Next freq icon (sjIconX[3])
+            else if (tx >= (sjIconX[3] - 10) && tx <= (sjIconX[3] + 20)) {
                 if (!autoSweep) {
                     nextFrequency();
                     drawHeader();
                 }
                 return;
             }
-            // Sweep icon (x=180)
-            else if (tx >= 170 && tx <= 200) {
+            // Sweep icon (sjIconX[4])
+            else if (tx >= (sjIconX[4] - 10) && tx <= (sjIconX[4] + 20)) {
                 toggleAutoSweep();
                 drawIconBar();
                 drawHeader();
                 return;
             }
-            // Mode icon at right edge
-            else if (tx >= (tft.width() - 35) && tx <= tft.width()) {
+            // Mode icon (sjIconX[5])
+            else if (tx >= (sjIconX[5] - 10) && tx <= (sjIconX[5] + 20)) {
                 toggleContinuousMode();
                 drawHeader();
                 return;
@@ -2845,8 +2845,8 @@ void loop() {
     if (!initialized) return;
 
     // ═══════════════════════════════════════════════════════════════════════
-    // TOUCH HANDLING - Match actual icon positions
-    // Icons: Back=10, Power=50, Down=90, Up=130, Random=170
+    // TOUCH HANDLING - Touch zones reference sbIconX[] for screen scaling
+    // sbIconX: [0]=Power, [1]=Down, [2]=Up, [3]=Random, [4]=Back
     // ═══════════════════════════════════════════════════════════════════════
     touchButtonsUpdate();
 
@@ -2854,15 +2854,15 @@ void loop() {
     if (getTouchPoint(&tx, &ty)) {
         // Icon bar area
         if (ty >= ICON_BAR_TOUCH_TOP && ty <= ICON_BAR_TOUCH_BOTTOM) {
-            // Back icon (x=10, zone 0-35)
-            if (tx < 35) {
+            // Back icon (sbIconX[4])
+            if (tx >= (sbIconX[4] - 5) && tx <= (sbIconX[4] + 20)) {
                 running = false;
                 stopAttack();
                 exitRequested = true;
                 return;
             }
-            // Power/Toggle icon (x=50, zone 35-75)
-            if (tx >= 35 && tx < 75) {
+            // Power/Toggle icon (sbIconX[0])
+            if (tx >= (sbIconX[0] - 10) && tx <= (sbIconX[0] + 20)) {
                 if (running) {
                     stopAttack();
                 } else {
@@ -2870,18 +2870,18 @@ void loop() {
                 }
                 waitForTouchRelease();
             }
-            // Down/Prev protocol (x=90, zone 75-115)
-            if (tx >= 75 && tx < 115 && !running) {
+            // Down/Prev protocol (sbIconX[1])
+            if (tx >= (sbIconX[1] - 10) && tx <= (sbIconX[1] + 20) && !running) {
                 prevProtocol();
                 waitForTouchRelease();
             }
-            // Up/Next protocol (x=130, zone 115-155)
-            if (tx >= 115 && tx < 155 && !running) {
+            // Up/Next protocol (sbIconX[2])
+            if (tx >= (sbIconX[2] - 10) && tx <= (sbIconX[2] + 20) && !running) {
                 nextProtocol();
                 waitForTouchRelease();
             }
-            // Random/Toggle De Bruijn (x=170, zone 155+)
-            if (tx >= 155 && !running) {
+            // Random/Toggle De Bruijn (sbIconX[3])
+            if (tx >= (sbIconX[3] - 10) && tx <= (sbIconX[3] + 20) && !running) {
                 toggleDeBruijn();
                 waitForTouchRelease();
             }
