@@ -4394,7 +4394,9 @@ enum FilterMode {
     FILT_ALL,      // Show all networks
     FILT_OPEN,     // Open networks only
     FILT_WEP,      // WEP only
-    FILT_WPA       // WPA/WPA2 only
+    FILT_WPA,      // WPA/WPA2 only
+    FILT_NOHIDDEN, // Hide hidden SSIDs
+    FILT_COUNT     // Number of filter modes
 };
 
 // State variables
@@ -4425,6 +4427,20 @@ static int selectedChannel = 0;
 static bool deauthRequested = false;
 static bool cloneRequested = false;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CLIENT COUNT - Passive promiscuous sniff counts unique clients per AP
+// Zero-alloc: uses only the apClientCounts[50] array (50 bytes BSS)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#define CLIENT_SCAN_DURATION 3000  // 3 seconds of passive sniffing
+
+static uint8_t apClientCounts[32];  // Client count per network index (32 bytes)
+static bool clientScanDone = false;
+
+// Single pending frame from ISR — just the AP BSSID to match
+static volatile bool pendingClientReady = false;
+static uint8_t pendingAPBSSID[6];
+
 // Forward declarations
 static void drawList();
 static void drawWifiScanUI();
@@ -4451,6 +4467,9 @@ static void sortAndFilterNetworks() {
             case FILT_WPA:
                 include = (enc == WIFI_AUTH_WPA_PSK || enc == WIFI_AUTH_WPA2_PSK ||
                           enc == WIFI_AUTH_WPA_WPA2_PSK || enc == WIFI_AUTH_WPA2_ENTERPRISE);
+                break;
+            case FILT_NOHIDDEN:
+                include = (WiFi.SSID(i).length() > 0);
                 break;
             default:
                 include = true;
@@ -4525,6 +4544,106 @@ static void drawSignalBars(int x, int y, int rssi) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CLIENT SCANNING - Promiscuous sniffer for connected clients
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void IRAM_ATTR clientSnifferCB(void* buf, wifi_promiscuous_pkt_type_t type) {
+    if (type != WIFI_PKT_DATA) return;
+    if (pendingClientReady) return;
+
+    wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*)buf;
+    uint8_t* payload = pkt->payload;
+    uint8_t frameType = payload[0] & 0x0C;
+    if (frameType != 0x08) return;
+
+    uint8_t flags = payload[1];
+    bool toDS = flags & 0x01;
+    bool fromDS = flags & 0x02;
+
+    uint8_t* bssid = NULL;
+    uint8_t* clientMac = NULL;
+
+    if (toDS && !fromDS) {
+        bssid = payload + 4;
+        clientMac = payload + 10;
+    } else if (!toDS && fromDS) {
+        clientMac = payload + 4;
+        bssid = payload + 10;
+    } else {
+        return;
+    }
+
+    // Skip broadcast/multicast clients
+    if (clientMac[0] & 0x01) return;
+
+    memcpy(pendingAPBSSID, bssid, 6);
+    pendingClientReady = true;
+}
+
+static void processClientQueue() {
+    if (!pendingClientReady) return;
+
+    // Match AP BSSID directly to scan results, increment counter
+    int limit = (networkCount < 32) ? networkCount : 32;
+    for (int n = 0; n < limit; n++) {
+        uint8_t* apBssid = WiFi.BSSID(n);
+        if (apBssid && memcmp(pendingAPBSSID, apBssid, 6) == 0) {
+            if (apClientCounts[n] < 255) apClientCounts[n]++;
+            break;
+        }
+    }
+    pendingClientReady = false;
+}
+
+// Get cached client count for a network index
+static int countClientsForAP(int networkIndex) {
+    if (!clientScanDone || networkIndex < 0 || networkIndex >= 32) return 0;
+    return apClientCounts[networkIndex];
+}
+
+// Run a quick promiscuous client scan across channels
+static void scanClients() {
+    clientScanDone = false;
+    pendingClientReady = false;
+    memset(apClientCounts, 0, sizeof(apClientCounts));
+
+    tft.setTextColor(HALEHOUND_VIOLET);
+    tft.setCursor(10, SCALE_Y(78));
+    tft.print("[*] Scanning clients...");
+
+    wifi_promiscuous_filter_t filter = {
+        .filter_mask = WIFI_PROMIS_FILTER_MASK_DATA
+    };
+    esp_wifi_set_promiscuous_filter(&filter);
+    esp_wifi_set_promiscuous_rx_cb(&clientSnifferCB);
+    esp_wifi_set_promiscuous(true);
+
+    uint32_t startTime = millis();
+    int ch = 1;
+    uint32_t lastHop = 0;
+    while (millis() - startTime < CLIENT_SCAN_DURATION) {
+        if (millis() - lastHop >= 300) {
+            ch = (ch % 13) + 1;
+            esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+            lastHop = millis();
+        }
+        processClientQueue();
+        delay(5);
+    }
+    processClientQueue();
+
+    esp_wifi_set_promiscuous(false);
+    esp_wifi_set_promiscuous_rx_cb(NULL);
+    clientScanDone = true;
+
+    #if CYD_DEBUG
+    int total = 0;
+    for (int i = 0; i < networkCount; i++) total += apClientCounts[i];
+    Serial.printf("[WIFISCAN] Client scan done: %d data frames matched\n", total);
+    #endif
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ATTACK POPUP - DEAUTH / CLONE / CANCEL
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -4566,13 +4685,22 @@ static void showAttackPopup(int index) {
     tft.print(ssid.substring(0, 14));
     if (ssid.length() > 14) tft.print("..");
 
-    // Channel info
+    // Channel info + client count
     tft.setCursor(popupX + 10, popupY + SCALE_H(58));
     tft.print("Ch: ");
     tft.print(WiFi.channel(realIdx));
     tft.print("  ");
     tft.print(WiFi.RSSI(realIdx));
     tft.print("dBm");
+    if (clientScanDone) {
+        int nc = countClientsForAP(realIdx);
+        if (nc > 0) {
+            tft.setTextColor(HALEHOUND_CYAN);
+            tft.print("  ");
+            tft.print(nc);
+            tft.print(" cli");
+        }
+    }
 
     // Buttons — MUST match handleAttackPopupTouch() coordinates exactly
     int btnY = popupY + SCALE_H(80);
@@ -4726,6 +4854,12 @@ static void drawWifiScanUI() {
             tft.setTextColor(HALEHOUND_HOTPINK, HALEHOUND_DARK);
             tft.print("WPA");
             break;
+        case FILT_NOHIDDEN:
+            tft.setTextColor(HALEHOUND_CYAN, HALEHOUND_DARK);
+            tft.print("-HD");
+            break;
+        default:
+            break;
     }
 
     // Network count
@@ -4844,16 +4978,27 @@ static void drawList() {
         // SSID (truncated)
         tft.setCursor(22, y + 2);
         tft.setTextColor(dispIdx == currentIndex ? HALEHOUND_HOTPINK : HALEHOUND_BRIGHT);
-        int maxSSID = (SCREEN_WIDTH > 240) ? 16 : 11;
+        int maxSSID = (SCREEN_WIDTH > 240) ? 14 : 9;
         String dispSSID = ssid.substring(0, maxSSID);
         tft.print(dispSSID);
         if ((int)ssid.length() > maxSSID) tft.print("..");
 
         // Channel
-        tft.setCursor(SCALE_X(150), y + 2);
+        tft.setCursor(SCALE_X(130), y + 2);
         tft.setTextColor(dispIdx == currentIndex ? HALEHOUND_HOTPINK : HALEHOUND_VIOLET);
         if (ch < 10) tft.print(" ");
         tft.print(ch);
+
+        // Client count (if client scan done)
+        if (clientScanDone) {
+            int numClients = countClientsForAP(realIdx);
+            if (numClients > 0) {
+                tft.setCursor(SCALE_X(152), y + 2);
+                tft.setTextColor(HALEHOUND_CYAN);
+                tft.print(numClients);
+                tft.print("c");
+            }
+        }
 
         // Signal bars
         drawSignalBars(SCREEN_WIDTH - 22, y + 2, rssi);
@@ -4944,6 +5089,22 @@ static void drawDetails() {
     y += lineStep;
     tft.setCursor(10, y); tft.print("Distance: ~"); tft.print(distance, 1); tft.print("m");
 
+    // Client activity
+    if (clientScanDone) {
+        y += lineStep;
+        int activity = countClientsForAP(currentIndex);
+        tft.setCursor(10, y);
+        if (activity > 0) {
+            tft.setTextColor(HALEHOUND_CYAN);
+            tft.print("Activity: ");
+            tft.print(activity);
+            tft.print(" frames");
+        } else {
+            tft.setTextColor(HALEHOUND_GUNMETAL);
+            tft.print("Activity: none seen");
+        }
+    }
+
     tft.setTextColor(HALEHOUND_VIOLET);
     tft.setCursor(5, SCREEN_HEIGHT - 12);
     tft.print("BACK=Return to list");
@@ -4978,6 +5139,12 @@ void startScan() {
 
     // Apply sort and filter
     sortAndFilterNetworks();
+
+    // Client scan - passive sniff for connected stations
+    // Note: tallies against WiFi scan results while they're still valid
+    if (networkCount > 0) {
+        scanClients();
+    }
 
     // Log to wardriving if enabled
     if (wardrivingEnabled && networkCount > 0) {
@@ -5016,6 +5183,8 @@ void setup() {
     selectedSSID[0] = '\0';
     selectedBSSID[0] = '\0';
     selectedChannel = 0;
+    clientScanDone = false;
+    pendingClientReady = false;
 
     // Keep sort/filter settings between scans (user preference)
     // currentSort and currentFilter persist
@@ -5080,7 +5249,7 @@ void loop() {
                 }
                 // Filter button
                 else if (tx >= SCALE_X(75) && tx <= SCALE_X(115)) {
-                    currentFilter = (FilterMode)((currentFilter + 1) % 4);
+                    currentFilter = (FilterMode)((currentFilter + 1) % FILT_COUNT);
                     sortAndFilterNetworks();
                     currentIndex = 0;
                     listStartIndex = 0;

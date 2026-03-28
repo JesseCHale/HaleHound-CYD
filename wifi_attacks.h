@@ -38,6 +38,8 @@
 // │   - RSSI signal strength                                                │
 // │   - Encryption type detection                                           │
 // │   - Estimated distance calculation                                      │
+// │   - Hidden SSID filter toggle                                           │
+// │   - Connected client discovery (passive promiscuous scan)               │
 // ├──────────────────────────────────────────────────────────────────────────┤
 // │ CaptivePortal - Credential harvesting portal                            │
 // │   - Customizable SSID                                                   │
@@ -251,8 +253,9 @@ void cleanup();
 }  // namespace DeauthDetect
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WIFI SCAN v2.0 - Network Scanner with Tap-to-Attack
-// Sort, Filter, Signal Bars, Attack Handoff
+// WIFI SCAN v3.0 - Network Scanner with Tap-to-Attack
+// Sort, Filter (incl. hidden SSID filter), Signal Bars,
+// Connected Client Discovery, Attack Handoff
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace WifiScan {
