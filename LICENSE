@@ -115,17 +115,43 @@ Jesse C. Hale and are governed by the Proprietary License above.
 
 THIRD-PARTY COMPONENTS:
 The compiled firmware incorporates components from the following
-open-source projects. Users are responsible for compliance with all
-applicable third-party licenses:
+open-source projects:
 
-  - ESP32 Arduino Core (LGPL)
-  - TFT_eSPI library (Bodmer, FreeBSD)
-  - RCSwitch library (sui77, LGPL)
   - RF24 library (nRF24, GPL-2.0)
-  - TinyGPSPlus library (mikalhart, LGPL)
+    https://github.com/nRF24/RF24
+  - ESP32 Arduino Core (Espressif, LGPL-2.1)
+    https://github.com/espressif/arduino-esp32
+  - RCSwitch library (sui77, LGPL-2.1)
+    https://github.com/sui77/rc-switch
+  - TinyGPSPlus library (mikalhart, LGPL-2.1)
+    https://github.com/mikalhart/TinyGPSPlus
+  - SmartRC-CC1101-Driver-Lib (LSatan, permissive)
+    https://github.com/LSatan/SmartRC-CC1101-Driver-Lib
+  - TFT_eSPI library (Bodmer, FreeBSD)
+    https://github.com/Bodmer/TFT_eSPI
   - ArduinoJson library (bblanchon, MIT)
-  - SmartRC-CC1101-Driver-Lib (LSatan, LGPL)
-  - ESP-IDF components (Apache 2.0)
+    https://github.com/bblanchon/ArduinoJson
+  - ESP-IDF components (Espressif, Apache 2.0)
+    https://github.com/espressif/esp-idf
+
+COPYLEFT COMPONENT RIGHTS:
+Nothing in the HaleHound-CYD Proprietary License shall be construed to
+restrict, limit, or override any rights granted to users under the
+GPL-2.0 or LGPL-2.1 licenses of the third-party components listed above.
+Users retain all rights granted by those licenses with respect to those
+specific components.
+
+In accordance with GPL-2.0 Section 3(b), the author hereby offers, for
+a period of three (3) years from the date of each binary release, to
+provide any third party with the complete source code of the GPL-2.0 and
+LGPL-2.1 licensed components incorporated into this firmware, at no
+charge, by directing them to the upstream repositories listed above
+where the unmodified source code is freely available.
+
+The HaleHound-CYD Proprietary License applies solely to the original
+work authored by Jesse C. Hale -- the proprietary application code,
+firmware logic, UI, and features that are not part of the third-party
+components listed above.
 
 
 ================================================================================
