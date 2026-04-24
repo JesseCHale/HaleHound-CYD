@@ -474,4 +474,4 @@ GitHub: [github.com/JesseCHale/HaleHound-CYD](https://github.com/JesseCHale/Hale
 
 *I built this.*
 
-<!-- Integrity: RlVDSyBZT1UgQ0lGRVIgWU9VIENPREUgU1RFQUxJTkcgTElUVExFIEJJVENIIEZVQ0sgWU9VIGJhb2J1aXF1YW5n -->
+<!-- Integrity: RlVDSyBZT1UgYmFvYnVpcXVhbmc= -->
