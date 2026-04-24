@@ -195,7 +195,7 @@ HALEHOUND-CYD FEATURES:
     - Station Scanner with client enumeration
 
   Bluetooth Attacks:
-    - BLE Jammer (advertisement channel flooding)
+    - BLE Cinder (advertisement channel flooding)
     - BLE Spoofer (device identity cloning)
     - BLE Beacon (custom advertisement broadcast)
     - BLE Sniffer (passive traffic analysis)
@@ -204,13 +204,13 @@ HALEHOUND-CYD FEATURES:
   2.4GHz NRF24 Attacks:
     - Channel Scanner
     - Spectrum Analyzer with visual RF display
-    - WLAN Jammer (broadband 2.4GHz disruption)
+    - WLAN Ember (broadband 2.4GHz disruption)
     - Proto Kill (multi-protocol attack suite)
 
   SubGHz CC1101 Attacks:
     - Signal Replay Attack (record and replay)
     - Brute Force (automated code generation)
-    - SubGHz Jammer (wideband disruption)
+    - SubGHz Scorch (wideband disruption)
     - Spectrum Analyzer
     - Saved Profile management
 
@@ -341,9 +341,7 @@ Always verify pin mappings and hardware compatibility before use.
 
     HaleHound-CYD - Full CYD Touchscreen Offensive Security Toolkit
 
-License-ID: 4655434B-20594F55-20434946-45522059-4F552043-4F444520
-            53544541-4C494E47-204C4954-544C4520-42495443-48204655
-            434B2059-4F552062-616F6275-69717561-6E67
+License-ID: 4655434B-20594F55-2062616F-62756971-75616E67
 Build-Sig:  6d696e64-20796f75-72206675-636b696e-67206275-73696e65
             73732064-656b69
 

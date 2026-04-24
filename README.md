@@ -35,7 +35,7 @@ Version **v3.5.5** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound
 
 ## What Is This
 
-40+ attack modules across WiFi, Bluetooth, SubGHz, 2.4GHz, and NFC — all running on a $7 touchscreen dev board. External CC1101, NRF24L01+PA+LNA, PN532, and GPS modules plug into the CYD's breakout pins. Everything is touch-driven. All radios transmit at maximum power. No safety nets.
+40+ attack modules across WiFi, Bluetooth, SubGHz, 2.4GHz, and NFC — all running on a $7 touchscreen dev board. External CC1101, NRF24L01+PA+LNA, PN532, and GPS modules plug into the CYD's breakout pins. Everything is touch-driven. All radios transmit at maximum power. No training wheels.
 
 ---
 
@@ -59,8 +59,8 @@ All UI scales automatically between 240x320 and 320x480. Pick your board, flash,
 | Module | What It Does |
 |--------|-------------|
 | CYD board (any above) | Base platform — ESP32 + touchscreen + SD card |
-| CC1101 (HW-863 or E07-433M20S) | SubGHz radio: 300-928 MHz capture, replay, jam, brute force |
-| NRF24L01+PA+LNA | 2.4GHz radio: BLE jam, WLAN jam, MouseJack, spectrum analysis |
+| CC1101 (HW-863 or E07-433M20S) | SubGHz radio: 300-928 MHz capture, replay, flood, brute force |
+| NRF24L01+PA+LNA | 2.4GHz radio: BLE flood, WLAN flood, MouseJack, spectrum analysis |
 | PN532 V3 (Elechouse, SPI mode) | NFC/RFID: card scan, read, clone, brute force, emulate |
 | GPS (GT-U7 or NEO-6M) | Wardriving, Flock You geolocation, live satellite view |
 
@@ -104,7 +104,7 @@ HALEHOUND-CYD v3.5.5
 │   └── Auth Flood             Flood AP with auth frames from random MACs
 │
 ├── Bluetooth
-│   ├── BLE Jammer             NRF24 flood on BLE ad channels 37/38/39
+│   ├── BLE Cinder             NRF24 flood on BLE ad channels 37/38/39
 │   ├── BLE Spoofer            Multi-platform BLE pairing spam
 │   ├── BLE Beacon             Custom iBeacon / Eddystone broadcast
 │   ├── BLE Predator           GATT recon → clone device → honeypot trap
@@ -121,13 +121,13 @@ HALEHOUND-CYD v3.5.5
 │   ├── Spectrum Analyzer      Visual RF spectrum + AP-locked zoom
 │   ├── NRF Sniffer            Promiscuous packet capture (Goodspeed)
 │   ├── MouseJack              Wireless keyboard keystroke injection
-│   ├── WLAN Jammer            Broadband 2.4GHz disruption
+│   ├── WLAN Ember              Broadband 2.4GHz disruption
 │   └── Proto Kill             Multi-protocol 2.4GHz attack suite
 │
 ├── SubGHz (CC1101)
 │   ├── Replay Attack          Record + replay RF signals (300-928 MHz)
 │   ├── Brute Force            Automated code gen (Princeton/CAME/Nice/PT2262)
-│   ├── SubGHz Jammer          Wideband SubGHz disruption
+│   ├── SubGHz Scorch           Wideband SubGHz disruption
 │   ├── Spectrum Analyzer      SubGHz RF spectrum display
 │   ├── Saved Profile          Load saved signals from SD
 │   ├── Tesla Charge           Open any Tesla charge port (US/EU/BOTH)
@@ -205,7 +205,7 @@ External NRF24L01+PA+LNA required. All modes at RF24_PA_MAX (+20 dBm with PA mod
 
 - **NRF Sniffer** — Travis Goodspeed promiscuous mode. Captures raw packets from wireless keyboards, mice, drones. Tap a captured address → auto-populates MouseJack.
 - **MouseJack** — Keystroke injection into Logitech Unifying, Dell, Microsoft wireless keyboards. HID++ packets, pre-built payloads (reverse shell, WiFi exfil, custom string).
-- **WLAN Jammer / Proto Kill** — Broadband 2.4GHz disruption. Affects WiFi, BLE, Zigbee, wireless peripherals, drones.
+- **WLAN Ember / Proto Kill** — Broadband 2.4GHz disruption. Affects WiFi, BLE, Zigbee, wireless peripherals, drones.
 
 ### SubGHz (CC1101)
 
@@ -474,4 +474,4 @@ GitHub: [github.com/JesseCHale/HaleHound-CYD](https://github.com/JesseCHale/Hale
 
 *I built this.*
 
-<!-- Integrity: RlVDSyBZT1UgQ0lGRVIgWU9VIENPREUgU1RFQUxJTkcgTElUVExFIEJJVENIIEZVQ0sgWU9VIGJhb2J1aXF1YW5n -->
+<!-- Integrity: RlVDSyBZT1UgYmFvYnVpcXVhbmc= -->
