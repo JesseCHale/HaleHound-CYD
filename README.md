@@ -25,7 +25,7 @@
      ░  ░  ░      ░  ░    ░  ░   ░  ░ ░  ░  ░    ░ ░     ░              ░    ░
 ```
 
-# HaleHound-CYD
+# HaleHound™-CYD
 
 **Multi-protocol offensive security toolkit for the ESP32 Cheap Yellow Display**
 
