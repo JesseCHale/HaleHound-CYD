@@ -68,7 +68,7 @@ PERMITTED:
 
 PROHIBITED:
   - Redistributing the firmware binaries, in whole or in part, through
-    any channel other than this repository
+    any channel other than this repository OR the flash.HaleHound.com web flasher 
   - Reverse engineering, decompiling, or disassembling the firmware
   - Modifying, adapting, or creating derivative works from the binaries
   - Selling, sublicensing, or commercially distributing the firmware
