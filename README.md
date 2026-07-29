@@ -29,7 +29,7 @@
 
 **Multi-protocol offensive security toolkit for the ESP32 Cheap Yellow Display**
 
-Version **v3.8.1** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
+Version **v3.8.2** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
 
 [![Flash in your browser](https://img.shields.io/badge/%E2%9A%A1%20FLASH%20IN%20YOUR%20BROWSER-flash.halehound.com-ff2d95?style=for-the-badge&labelColor=1a1a1a)](https://flash.halehound.com)
 
@@ -95,7 +95,7 @@ The signal wires (SPI, CS, CE, GDO0, GDO2, TX_EN, RX_EN) still connect directly 
 ## Menu Tree
 
 ```
-HALEHOUND-CYD v3.8.1
+HALEHOUND-CYD v3.8.2
 │
 ├── WiFi
 │   ├── Packet Monitor         Real-time 802.11 frame capture + graph
@@ -108,36 +108,38 @@ HALEHOUND-CYD v3.8.1
 │   └── Auth Flood             Flood AP with auth frames from random MACs
 │
 ├── Bluetooth
-│   ├── BLE Cinder             NRF24 flood on BLE ad channels 37/38/39
+│   ├── BLE Jammer             NRF24 flood on BLE ad channels 37/38/39
 │   ├── BLE Spoofer            Multi-platform BLE pairing spam
 │   ├── BLE Beacon             Custom iBeacon / Eddystone broadcast
 │   ├── BLE Predator           GATT recon → clone device → honeypot trap
 │   ├── WhisperPair            CVE-2025-36911 — Fast Pair exploit
 │   ├── Airoha RACE            CVE-2025-20700 — link key extraction
-│   └── Lunatic Fringe ──┐
-│       ├── Tracker Scan  │    Multi-platform BLE tracker scanner
-│       ├── AirTag Detect │    Apple FindMy tracker detection
-│       ├── Phantom Flood │    Fake FindMy advertisement flood
-│       └── AirTag Replay │    Sniff + replay real AirTag identity
+│   ├── Lunatic Fringe ──┐
+│   │   ├── Tracker Scan  │    Multi-platform BLE tracker scanner
+│   │   ├── AirTag Detect │    Apple FindMy tracker detection
+│   │   ├── Phantom Flood │    Fake FindMy advertisement flood
+│   │   ├── AirTag Replay │    Sniff + replay real AirTag identity
+│   │   └── AirTag Scream │    Force nearby AirTags to play a sound
+│   └── SkeletonKey            BLE GATT enumerate + fuzz — smart-lock opener
 │
 ├── 2.4GHz (NRF24)
 │   ├── Scanner                Channel activity across 2400-2525 MHz
 │   ├── Spectrum Analyzer      Visual RF spectrum + AP-locked zoom
 │   ├── NRF Sniffer            Promiscuous packet capture (Goodspeed)
 │   ├── MouseJack              Wireless keyboard keystroke injection
-│   ├── WLAN Ember              Broadband 2.4GHz disruption
+│   ├── WLAN Jammer             Broadband 2.4GHz disruption
 │   └── Proto Kill             Multi-protocol 2.4GHz attack suite
 │
 ├── SubGHz (CC1101)
 │   ├── Replay Attack          Record + replay RF signals (300-928 MHz)
 │   ├── Brute Force            Automated code gen (Princeton/CAME/Nice/PT2262)
-│   ├── SubGHz Scorch           Wideband SubGHz disruption
+│   ├── SubGHz Jammer           Wideband SubGHz disruption
 │   ├── Spectrum Analyzer      33-bar spectrum, peak-hold, band focus, noise-floor cal
 │   ├── Saved Profile          Load saved signals from SD
 │   ├── Tesla Charge           Open any Tesla charge port (US/EU/BOTH)
 │   └── .Sub Read              Flipper .sub file browser + transmitter
 │
-├── RFID (PN532)
+├── RFID (PN-532 / Chameleon Ultra / ST25R3916 [stub])
 │   ├── Card Scanner           Detect + identify NFC/RFID cards
 │   ├── Card Reader            MIFARE sector data dump
 │   ├── Card Clone             Clone UID to writable card
@@ -155,7 +157,6 @@ HALEHOUND-CYD v3.8.1
 │   ├── EAPOL Capture          WPA handshake + PMKID capture
 │   ├── Karma Attack           Auto-respond to all probes → portal
 │   ├── Wardriving             GPS-tagged AP scanning to SD
-│   ├── Saved Captures         Browse captured handshakes
 │   ├── IoT Recon              Automated LAN scanner + credential brute
 │   ├── Loot                   Unified loot browser (5 categories)
 │   └── Flock You              Flock Safety ALPR camera detector
@@ -211,7 +212,8 @@ All BLE uses the ESP32's built-in Bluetooth. Proper WiFi↔BLE radio teardown ha
 - **BLE Predator** — Three phases: SCAN (discover + threat classify), RECON (GATT enumerate all services/chars), HONEYPOT (clone as connectable server, capture credentials on WRITE). Loot saved to SD.
 - **Airoha RACE** — CVE-2025-20700/20701/20702. Unauthenticated BLE GATT access to Airoha chipsets (Sony XM4/XM5/XM6, Marshall, JBL, Jabra, etc). Extracts Bluetooth link keys, BD_ADDR, firmware version, flash memory. No pairing required.
 - **WhisperPair** — CVE-2025-36911. Probes Google Fast Pair devices for unauthorized pairing vulnerability.
-- **Lunatic Fringe** — Hub for tracker detection and attacks. Scans for AirTags, Samsung SmartTags, Tile, Chipolo, Google FMDN. Phantom Flood spams fake FindMy trackers. AirTag Replay clones real AirTag identities.
+- **Lunatic Fringe** — Hub for tracker detection and attacks. Scans for AirTags, Samsung SmartTags, Tile, Chipolo, Google FMDN. Phantom Flood spams fake FindMy trackers. AirTag Replay clones real AirTag identities. AirTag Scream forces nearby AirTags to play a sound.
+- **SkeletonKey** — Connect to a BLE device, enumerate its full GATT table, and fire real commands. Recognizes LED-strip and smart-device profiles for one-tap control, or fuzz any writable characteristic. Chains straight from BLE Predator's recon.
 
 ### 2.4GHz (NRF24)
 
@@ -219,7 +221,7 @@ External NRF24L01+PA+LNA required. All modes at RF24_PA_MAX (+20 dBm with PA mod
 
 - **NRF Sniffer** — Travis Goodspeed promiscuous mode. Captures raw packets from wireless keyboards, mice, drones. Tap a captured address → auto-populates MouseJack.
 - **MouseJack** — Keystroke injection into Logitech Unifying, Dell, Microsoft wireless keyboards. HID++ packets, pre-built payloads (reverse shell, WiFi exfil, custom string).
-- **WLAN Ember / Proto Kill** — Broadband 2.4GHz disruption. Affects WiFi, BLE, Zigbee, wireless peripherals, drones.
+- **WLAN Jammer / Proto Kill** — Broadband 2.4GHz disruption. Affects WiFi, BLE, Zigbee, wireless peripherals, drones.
 
 ### SubGHz (CC1101)
 
@@ -230,10 +232,13 @@ External CC1101 required. All TX at setPA(12) max power. Optional E07-433M20S PA
 - **Tesla Charge** — Opens the charge port on any Tesla. Static 43-byte OOK payload, zero authentication, zero rolling code. Works on every Tesla ever made. US (315 MHz), EU (433.92 MHz), or both.
 - **.Sub Read** — Browse and transmit Flipper Zero .sub files from SD card. Supports RAW, Princeton, CAME, Nice FLO across full CC1101 frequency range. No .sub files required — shows empty state if folder is missing. Drop files in `/subghz/` when you have them.
 
-### RFID (PN532)
+### RFID
 
-External PN532 V3 in SPI mode. Scan, read, clone, brute force, and emulate MIFARE Classic cards.
+The RFID menu opens a backend picker — choose one, then run the card suite: scan, read, clone, brute force, emulate MIFARE Classic.
 
+- **PN-532** (default) — Elechouse PN532 V3 in SPI mode. The full card suite runs here.
+- **Chameleon Ultra** — Connects over BLE. NTAG read/write and mfkey32 key recovery.
+- **ST25R3916** — Stub. The menu is wired up, but the RFAL driver is still in development.
 - **NTAG Tools** — NFC Tools-style suite for NTAG213/215/216 (and Ultralight EV1). Model ID, full page dump, NDEF decode (URL + Text), multi-record composer, and the write side: erase, permanent read-only lock, password set/remove, auth-on-write. On-screen keyboard for URL/text/password entry.
 
 ### Jam Detect
@@ -246,7 +251,7 @@ Defensive modules. WiFi Guardian catches deauth floods, SubGHz Sentinel detects 
 - **Karma Attack** — Auto-respond to every probe request, chain into captive portal for credential harvest.
 - **IoT Recon** — Connect to WiFi, scan the subnet, fingerprint services (HTTP, RTSP, Telnet, MQTT, Modbus, XMEye), brute force default credentials. Dual-core: networking on Core 0, UI on Core 1. Drop custom creds in `/creds.txt` on SD.
 - **Flock You** — Passive detection of Flock Safety ALPR cameras and Raven/ShotSpotter sensors via BLE fingerprinting. 22 OUI prefixes, 8 Raven GATT service UUIDs, firmware version estimation. GPS-tagged saves to SD.
-- **Loot** — Unified browser for all captured data: wardriving CSVs, EAPOL handshakes, WhisperPair/BLE Predator loot, IoT Recon reports, credentials.
+- **Loot** — Unified browser for all captured data: wardriving CSVs, EAPOL handshakes, WhisperPair/BLE Predator/Flock You loot, IoT Recon reports, credentials.
 
 ### Drone
 
@@ -386,8 +391,8 @@ FAT32 formatted MicroSD. Nothing is required — every module handles missing fo
 ├── subghz/         .sub files for Sub Read (organize into subfolders)
 ├── eapol/          EAPOL/PMKID captures
 ├── wardriving/     GPS-tagged AP logs
-├── wp_loot/        WhisperPair + BLE Predator loot
-├── loot/           Flock You detection logs
+├── wp_loot/        WhisperPair + BLE Predator + Flock You loot
+├── loot/           BLE Predator GATT dumps + honeypot loot
 ├── creds.txt       Custom credentials for IoT Recon (optional)
 ├── iot_recon.txt   IoT Recon attack reports
 └── firmware/       OTA update .bin files
