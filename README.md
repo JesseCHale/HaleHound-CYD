@@ -29,7 +29,7 @@
 
 **Multi-protocol offensive security toolkit for the ESP32 Cheap Yellow Display**
 
-Version **v3.8.2** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
+Version **v3.9.1** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
 
 [![Flash in your browser](https://img.shields.io/badge/%E2%9A%A1%20FLASH%20IN%20YOUR%20BROWSER-flash.halehound.com-ff2d95?style=for-the-badge&labelColor=1a1a1a)](https://flash.halehound.com)
 
@@ -95,7 +95,7 @@ The signal wires (SPI, CS, CE, GDO0, GDO2, TX_EN, RX_EN) still connect directly 
 ## Menu Tree
 
 ```
-HALEHOUND-CYD v3.8.2
+HALEHOUND-CYD v3.9.1
 │
 ├── WiFi
 │   ├── Packet Monitor         Real-time 802.11 frame capture + graph
@@ -128,6 +128,7 @@ HALEHOUND-CYD v3.8.2
 │   ├── NRF Sniffer            Promiscuous packet capture (Goodspeed)
 │   ├── MouseJack              Wireless keyboard keystroke injection
 │   ├── WLAN Jammer             Broadband 2.4GHz disruption
+│   ├── NRF Tuning             Live jammer tuning: power/rate/dwell/bands
 │   └── Proto Kill             Multi-protocol 2.4GHz attack suite
 │
 ├── SubGHz (CC1101)
@@ -222,6 +223,7 @@ External NRF24L01+PA+LNA required. All modes at RF24_PA_MAX (+20 dBm with PA mod
 - **NRF Sniffer** — Travis Goodspeed promiscuous mode. Captures raw packets from wireless keyboards, mice, drones. Tap a captured address → auto-populates MouseJack.
 - **MouseJack** — Keystroke injection into Logitech Unifying, Dell, Microsoft wireless keyboards. HID++ packets, pre-built payloads (reverse shell, WiFi exfil, custom string).
 - **WLAN Jammer / Proto Kill** — Broadband 2.4GHz disruption. Affects WiFi, BLE, Zigbee, wireless peripherals, drones.
+- **NRF Tuning** — Dedicated control panel for the 2.4GHz jammers: live drag-sliders and toggles for SPI clock, power (real dBm), data rate, dwell, channel step, and per-band channel selection — each explained in an on-SD guide, with every setting saved to the SD card.
 
 ### SubGHz (CC1101)
 
@@ -478,6 +480,8 @@ This project exists because of the people who use it, break it, and tell me what
 **@CircuitZ** — IoT Recon idea
 
 **@ValleytechSolutions** — Jam Detect concept
+
+**BKBroiler** — NRF Tuning panel idea
 
 **@ValleytechSolutions, @TalkingSasquach, @Notorious-Squirrel, @Man-In-The-Mayhem, @hamspiced** — The efforts and ideas that created the OPSEC of the HaleHound
 
