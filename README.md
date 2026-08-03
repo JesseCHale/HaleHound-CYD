@@ -29,7 +29,7 @@
 
 **Multi-protocol offensive security toolkit for the ESP32 Cheap Yellow Display**
 
-Version **v3.9.1** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
+Version **v3.9.2** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
 
 [![Flash in your browser](https://img.shields.io/badge/%E2%9A%A1%20FLASH%20IN%20YOUR%20BROWSER-flash.halehound.com-ff2d95?style=for-the-badge&labelColor=1a1a1a)](https://flash.halehound.com)
 
@@ -95,7 +95,7 @@ The signal wires (SPI, CS, CE, GDO0, GDO2, TX_EN, RX_EN) still connect directly 
 ## Menu Tree
 
 ```
-HALEHOUND-CYD v3.9.1
+HALEHOUND-CYD v3.9.2
 │
 ├── WiFi
 │   ├── Packet Monitor         Real-time 802.11 frame capture + graph
