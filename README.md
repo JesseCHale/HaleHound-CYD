@@ -108,7 +108,7 @@ HALEHOUND-CYD v4.0
 │   └── Auth Flood             Flood AP with auth frames from random MACs
 │
 ├── Bluetooth
-│   ├── BLE Jammer             NRF24 flood on BLE ad channels 37/38/39
+│   ├── BLE Cinder             NRF24 carrier on BLE ad channels 37/38/39
 │   ├── BLE Spoofer            Multi-platform BLE pairing spam
 │   ├── BLE Beacon             Custom iBeacon / Eddystone broadcast
 │   ├── BLE Predator           GATT recon → clone device → honeypot trap
@@ -128,14 +128,14 @@ HALEHOUND-CYD v4.0
 │   ├── Spectrum Analyzer      Visual RF spectrum + AP-locked zoom
 │   ├── NRF Sniffer            Promiscuous packet capture (Goodspeed)
 │   ├── MouseJack              Wireless keyboard keystroke injection
-│   ├── WLAN Jammer             Broadband 2.4GHz disruption
-│   ├── NRF Tuning             Live jammer tuning: power/rate/dwell/bands
+│   ├── WLAN Ember             Broadband 2.4GHz carrier
+│   ├── NRF Tuning             Live carrier tuning: power/rate/dwell/bands
 │   └── Proto Kill             Multi-protocol 2.4GHz attack suite
 │
 ├── SubGHz (CC1101)
 │   ├── Replay Attack          Target hunts, capture + replay (300-439 MHz)
 │   ├── Brute Force            Automated code gen (Princeton/CAME/Nice/PT2262)
-│   ├── SubGHz Jammer           Wideband SubGHz disruption
+│   ├── SubGHz Scorch          Wideband SubGHz carrier
 │   ├── Spectrum Analyzer      33-bar spectrum, peak-hold, band focus, noise-floor cal
 │   ├── Saved Profile          Load saved signals from SD
 │   ├── Tesla Charge           Open any Tesla charge port (US/EU/BOTH)
@@ -187,7 +187,7 @@ HALEHOUND-CYD v4.0
 ├── Drone
 │   ├── Drone Detect           Dual-radio passive RID + BLE/WiFi fingerprint
 │   ├── RID Spoof              Broadcast ASTM F3411 Remote ID (WiFi + BLE)
-│   ├── Drone Jelly            Full-spectrum drone jam + live equalizer
+│   ├── Drone Jelly            Full-spectrum drone carrier + live equalizer
 │   └── Drone Deauth           Targeted deauth of a drone control link
 │
 └── Skimmer
@@ -224,8 +224,8 @@ External NRF24L01+PA+LNA required. All modes at RF24_PA_MAX (+20 dBm with PA mod
 
 - **NRF Sniffer** — Travis Goodspeed promiscuous mode. Captures raw packets from wireless keyboards, mice, drones. Tap a captured address → auto-populates MouseJack.
 - **MouseJack** — Keystroke injection into Logitech Unifying, Dell, Microsoft wireless keyboards. HID++ packets, pre-built payloads (reverse shell, WiFi exfil, custom string).
-- **WLAN Jammer / Proto Kill** — Broadband 2.4GHz disruption. Affects WiFi, BLE, Zigbee, wireless peripherals, drones.
-- **NRF Tuning** — Dedicated control panel for the 2.4GHz jammers: live drag-sliders and toggles for SPI clock, power (real dBm), data rate, dwell, channel step, and per-band channel selection — each explained in an on-SD guide, with every setting saved to the SD card.
+- **WLAN Ember / Proto Kill** — Broadband 2.4GHz carrier output. Affects WiFi, BLE, Zigbee, wireless peripherals, drones.
+- **NRF Tuning** — Dedicated control panel for the 2.4GHz tools: live drag-sliders and toggles for SPI clock, power (real dBm), data rate, dwell, channel step, and per-band channel selection — each explained in an on-SD guide, with every setting saved to the SD card.
 
 ### SubGHz (CC1101)
 
@@ -263,7 +263,7 @@ Anti-drone toolkit. Detection runs two radios at once — the NRF24 sniffs for B
 
 - **Drone Detect** — Flags drones by ASTM F3411 Remote ID plus SSID and BLE fingerprint. Two independent radios, passive RX.
 - **RID Spoof** — Broadcasts an ASTM F3411 Remote ID beacon over WiFi (Beacon + NaN) and BLE.
-- **Drone Jelly** — Full-spectrum drone jam with a live equalizer readout.
+- **Drone Jelly** — Full-spectrum drone carrier with a live equalizer readout.
 - **Drone Deauth** — Targeted deauth against a drone's control link.
 
 ### Skimmer Hunter (BETA)
