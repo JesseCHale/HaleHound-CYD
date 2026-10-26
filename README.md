@@ -39,7 +39,7 @@ Version **v4.0** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.c
 
 ## What Is This
 
-40+ attack modules across WiFi, Bluetooth, SubGHz, 2.4GHz, and NFC — all running on a $7 touchscreen dev board. External CC1101, NRF24L01+PA+LNA, PN532, and GPS modules plug into the CYD's breakout pins. Everything is touch-driven. All radios transmit at maximum power. No training wheels.
+40+ attack modules across WiFi, Bluetooth, SubGHz, 2.4GHz, and NFC — all running on a $7 touchscreen dev board. External CC1101, NRF24L01+PA+LNA, PN532, and GPS modules plug into the CYD's breakout pins. Everything is touch-driven. No training wheels.
 
 ---
 
@@ -194,7 +194,7 @@ HALEHOUND-CYD v4.0
 
 ### WiFi
 
-All WiFi attacks use the ESP32's built-in radio — no external hardware. APSTA mode: STA scans, AP injects raw frames. Max TX at +20.5 dBm.
+All WiFi attacks use the ESP32's built-in radio — no external hardware. APSTA mode: STA scans, AP injects raw frames.
 
 - **Deauther** — Scan, tap a target, flood deauth frames. WiFi Scanner has tap-to-deauth built in.
 - **Probe Sniffer → Evil Twin** — Capture what devices are looking for, then become that network. Auto-spawns GARMR captive portal with the probed SSID.
@@ -214,14 +214,14 @@ All BLE uses the ESP32's built-in Bluetooth. Proper WiFi↔BLE radio teardown ha
 
 ### 2.4GHz (NRF24)
 
-External NRF24L01+PA+LNA required. All modes at RF24_PA_MAX (+20 dBm with PA module).
+External NRF24L01+PA+LNA required.
 
 - **NRF Sniffer** — Travis Goodspeed promiscuous mode. Captures raw packets from wireless keyboards, mice, drones. Tap a captured address → auto-populates MouseJack.
 - **MouseJack** — Keystroke injection into Logitech Unifying, Dell, Microsoft wireless keyboards. HID++ packets, pre-built payloads (reverse shell, WiFi exfil, custom string).
 
 ### SubGHz (CC1101)
 
-External CC1101 required. All TX at setPA(12) max power. Optional E07-433M20S PA module for 20dBm amplified output.
+External CC1101 required. Optional E07-433M20S PA module for amplified SubGHz output.
 
 - **Replay Attack** — Opens on a target picker with seven curated hunts, each carrying its own tuning and an on-device playbook. Band-locked capture, one-press KeeLoq read, color-coded state banner, and REPLAY/SAVE/CLEAR controls. Sixty-four saved signals on SD, plus raw OOK pulse dumps for offline reversing.
 - **Brute Force** — Automated code generation with de Bruijn sequences. Princeton, CAME, Nice FLO, PT2262.
