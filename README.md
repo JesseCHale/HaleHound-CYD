@@ -437,16 +437,6 @@ Requires Python 3.10-3.13 (3.14 needs a platform.py patch).
 
 ---
 
-## TX Power
-
-Every attack radio runs at max.
-
-| Radio | Power |
-|-------|-------|
-| WiFi (ESP32) | +20.5 dBm |
-| NRF24+PA+LNA | +20 dBm |
-| CC1101 | +12 dBm (stock) / +20 dBm (E07 PA) |
-| BLE (ESP32) | +9 dBm |
 
 ---
 
