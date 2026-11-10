@@ -29,7 +29,7 @@
 
 **Multi-protocol offensive security toolkit for the ESP32 Cheap Yellow Display**
 
-Version **v4.0** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
+Version **v4.1** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
 
 [![Flash in your browser](https://img.shields.io/badge/%E2%9A%A1%20FLASH%20IN%20YOUR%20BROWSER-flash.halehound.com-ff2d95?style=for-the-badge&labelColor=1a1a1a)](https://flash.halehound.com)
 
@@ -95,7 +95,7 @@ The signal wires (SPI, CS, CE, GDO0, GDO2, TX_EN, RX_EN) still connect directly 
 ## Menu Tree
 
 ```
-HALEHOUND-CYD v4.0
+HALEHOUND-CYD v4.1
 │
 ├── WiFi
 │   ├── Packet Monitor         Real-time 802.11 frame capture + graph
@@ -174,15 +174,18 @@ HALEHOUND-CYD v4.0
 │   ├── Rotation               0° / 180° / 90° CW / 90° CCW
 │   ├── Device Info            Heap, CPU, flash, board name
 │   ├── Set PIN                4-digit boot lock
-│   └── CC1101 Module          Standard HW-863 ↔ E07 PA module
+│   ├── CC1101 Module          Standard HW-863 ↔ E07 PA module
+│   └── Language               English / 日本語 / Español / Deutsch
 │
 ├── About
-│   └── Firmware info + armed module list
+│   ├── Firmware info + armed module list
+│   └── Regulatory             FCC ID + 15.19 / 15.21 statements (e-label)
 │
 ├── Drone
 │   ├── Drone Detect           Dual-radio passive RID + BLE/WiFi fingerprint
 │   ├── RID Spoof              Broadcast ASTM F3411 Remote ID (WiFi + BLE)
-│   └── Drone Deauth           Targeted deauth of a drone control link
+│   ├── Drone Deauth           Targeted deauth of a drone control link
+│   └── Shadow HoodWink        DUML control-channel session over BLE
 │
 └── Skimmer
     └── Hunt                   Bluetooth card-skimmer hunter (BETA)
@@ -256,6 +259,9 @@ Anti-drone toolkit. Detection runs two radios at once — the NRF24 sniffs for B
 - **Drone Detect** — Flags drones by ASTM F3411 Remote ID plus SSID and BLE fingerprint. Two independent radios, passive RX.
 - **RID Spoof** — Broadcasts an ASTM F3411 Remote ID beacon over WiFi (Beacon + NaN) and BLE.
 - **Drone Deauth** — Targeted deauth against a drone's control link.
+- **Shadow HoodWink** — DUML control-channel session over BLE. Builds and parses DUML v1 frames with both CRCs, identifies the target and works the command set from an on-device registry that tiers every command by what it does.
+
+Remote ID serials resolve to a vendor and model family from `/drone_rid.db` on the card, and vendor prefixes from `/drone_oui.db` — 85 prefixes and 13 Remote ID prefixes, each verified against the live IEEE registries. Both are plain files on the SD card, so a new model or a new registration is a file drop, not a reflash.
 
 ### Skimmer Hunter (BETA)
 
@@ -264,6 +270,10 @@ Bluetooth credit-card-skimmer hunter. Multi-signal scoring plus an active confir
 ### VALHALLA Protocol
 
 Every offensive module is gated behind a liability disclaimer. Accept to unlock offensive tools, decline to enter **Blue Team mode** — defensive and passive modules only. Blue Team mode persists across reboots. The VALHALLA/BLUE TEAM banner on the home screen shows your current mode.
+
+### Languages
+
+**English, 日本語, Español, Deutsch.** Settings → Language switches the whole interface live — no reboot — and your choice survives a power-off. Every menu and every module screen is translated, not just the top level. The AWOK MINI is English-only; there is no room for a glyph pool on a 128x128 panel.
 
 ---
 
@@ -459,6 +469,17 @@ Requires Python 3.10-3.13 (3.14 needs a platform.py patch).
 ### Community
 
 This project exists because of the people who use it, break it, and tell me what to build next.
+
+**@ek0ms_savi0r** — the drone and UAS intel this firmware runs on, and it is first-class
+work. Four datasets: an IEEE OUI classification set covering drone, defense and
+autonomous-vehicle registrants, the full ANSI/CTA-2063A Remote ID serial prefix set, a UAS
+control/video/telemetry channel plan of 105 entries, and a drone-OUI list of 72 prefixes
+across 29 manufacturers. Every prefix was then re-checked against the live IEEE MA-L, MA-M,
+MA-S and IAB registries — **zero failures**: every OUI present, every registrant agreeing
+with the organization on file, every Remote ID prefix resolving to the vendor named
+alongside it. `/drone_oui.db` and `/drone_rid.db` are built from that work, and it is why
+those tables can be trusted on a card. The Flock Safety OUI set scraped off the Flock stack
+is theirs too — that is where F8:A2:D6 came from, a camera prefix this firmware was missing.
 
 **@CircuitZ** — IoT Recon idea
 
