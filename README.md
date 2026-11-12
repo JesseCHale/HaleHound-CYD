@@ -261,7 +261,7 @@ Anti-drone toolkit. Detection runs two radios at once — the NRF24 sniffs for B
 - **Drone Deauth** — Targeted deauth against a drone's control link.
 - **Shadow HoodWink** — DUML control-channel session over BLE. Builds and parses DUML v1 frames with both CRCs, identifies the target and works the command set from an on-device registry that tiers every command by what it does.
 
-Remote ID serials resolve to a vendor and model family from `/drone_rid.db` on the card, and vendor prefixes from `/drone_oui.db` — 85 prefixes and 13 Remote ID prefixes, each verified against the live IEEE registries. Both are plain files on the SD card, so a new model or a new registration is a file drop, not a reflash.
+Remote ID serials resolve to a vendor and model family from `/drone_rid.db` on the card — 13 ANSI/CTA-2063A manufacturer prefixes covering DJI, Autel, Skydio, Parrot, AgEagle, Microdrones, Percepto, Wingtra, Inspired Flight, Harris Aerial and XAG, each verified against the live IEEE registries. Without it a compliant aircraft shows a raw serial instead of a maker. It is a plain file on the card, so a new model or a new registration is a file drop, not a reflash — get it in the [SD Data Pack](https://flash.halehound.com).
 
 ### Skimmer Hunter (BETA)
 
