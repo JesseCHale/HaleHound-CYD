@@ -66,7 +66,7 @@ All UI scales automatically between 240x320 and 320x480. Pick your board, flash,
 | CC1101 (HW-863 or E07-433M20S) | SubGHz radio: 300-439 MHz capture, replay, flood, brute force |
 | NRF24L01+PA+LNA | 2.4GHz radio: BLE flood, WLAN flood, MouseJack, spectrum analysis |
 | PN532 V3 (Elechouse, SPI mode) | NFC/RFID: card scan, read, clone, brute force, emulate |
-| GPS (GT-U7 or NEO-6M) | Wardriving, Flock You geolocation, live satellite view |
+| GPS (GT-U7 or NEO-6M) | Wardriving, Flockjaw geolocation, live satellite view |
 
 ### Also Required: Independent 3.3V Power for Ebyte Modules
 
@@ -154,9 +154,9 @@ HALEHOUND-CYD v4.1.6
 │   ├── EAPOL Capture          WPA handshake + PMKID capture
 │   ├── Karma Attack           Auto-respond to all probes → portal
 │   ├── Wardriving             GPS-tagged AP scanning to SD
-│   ├── IoT Recon              Automated LAN scanner + credential brute
+│   ├── IoT Recon              LAN scan, credential + injection checks
 │   ├── Loot                   Unified loot browser (5 categories)
-│   └── Flock You              Flock Safety ALPR camera detector
+│   └── Flockjaw               Flock Safety ALPR camera detector
 │
 ├── Tools
 │   ├── Serial Monitor         UART passthrough terminal
@@ -185,7 +185,7 @@ HALEHOUND-CYD v4.1.6
 │   ├── Drone Detect           Dual-radio passive RID + BLE/WiFi fingerprint
 │   ├── RID Spoof              Broadcast ASTM F3411 Remote ID (WiFi + BLE)
 │   ├── Drone Deauth           Targeted deauth of a drone control link
-│   └── Shadow HoodWink        DUML control-channel session over BLE
+│   └── Shadow HoodWink        DUML control-channel session over BLE or WiFi
 │
 └── Skimmer
     └── Hunt                   Bluetooth card-skimmer hunter (BETA)
@@ -248,9 +248,9 @@ Defensive modules. WiFi Guardian catches deauth floods, SubGHz Sentinel detects 
 
 - **EAPOL Capture** — WPA 4-way handshake + PMKID extraction. Deauth to force reauth, capture, save in hashcat format.
 - **Karma Attack** — Auto-respond to every probe request, chain into captive portal for credential harvest.
-- **IoT Recon** — Connect to WiFi, scan the subnet, fingerprint services (HTTP, RTSP, Telnet, MQTT, Modbus, XMEye), brute force default credentials. Dual-core: networking on Core 0, UI on Core 1. Drop custom creds in `/creds.txt` on SD.
-- **Flock You** — Passive detection of Flock Safety ALPR cameras and Raven/ShotSpotter sensors via BLE fingerprinting. 22 OUI prefixes, 8 Raven GATT service UUIDs, firmware version estimation. GPS-tagged saves to SD.
-- **Loot** — Unified browser for all captured data: wardriving CSVs, EAPOL handshakes, WhisperPair/BLE Predator/Flock You loot, IoT Recon reports, credentials.
+- **IoT Recon** — Connect to WiFi, scan the subnet, fingerprint services (HTTP, RTSP, Telnet, MQTT, Modbus, XMEye), brute force default credentials. mDNS and SSDP discovery, so a host announces what it is before anything gets probed. Six unauthenticated command-injection checks — D-Link rtpd (CVE-2013-1599) and account_mgr (CVE-2024-10914), Tenda setUsbUnload (CVE-2020-10987), Zyxel weblogin (CVE-2020-9054), TP-Link Archer AX21 (CVE-2023-1389), Vacron board.cgi (CVE-2025-34043) — each gating itself so nothing fires at a device it cannot affect, with execution proven against a control request rather than inferred from a response code. An on-device shell for the boxes where a check lands. Every check reports on its own, so a host vulnerable to several issues lists all of them instead of stopping at the first. Dual-core: networking on Core 0, UI on Core 1. Drop custom creds in `/creds.txt` on SD.
+- **Flockjaw** — Passive detection of Flock Safety ALPR cameras and Raven/ShotSpotter sensors via BLE fingerprinting. 22 OUI prefixes, 8 Raven GATT service UUIDs, firmware version estimation. GPS-tagged saves to SD.
+- **Loot** — Unified browser for all captured data: wardriving CSVs, EAPOL handshakes, WhisperPair/BLE Predator/Flockjaw loot, IoT Recon reports, credentials.
 
 ### Drone
 
@@ -259,7 +259,7 @@ Anti-drone toolkit. Detection runs two radios at once — the NRF24 sniffs for B
 - **Drone Detect** — Flags drones by ASTM F3411 Remote ID plus SSID and BLE fingerprint. Two independent radios, passive RX.
 - **RID Spoof** — Broadcasts an ASTM F3411 Remote ID beacon over WiFi (Beacon + NaN) and BLE.
 - **Drone Deauth** — Targeted deauth against a drone's control link.
-- **Shadow HoodWink** — DUML control-channel session over BLE. Builds and parses DUML v1 frames with both CRCs, identifies the target and works the command set from an on-device registry that tiers every command by what it does.
+- **Shadow HoodWink** — DUML control-channel session over BLE or the aircraft's own WiFi link, for the aircraft that will not serve what you need over Bluetooth. Builds and parses DUML v1 frames with both CRCs, identifies the target and works the command set from an on-device registry that tiers every command by what it does. Reports the real pairing state: when an aircraft answers that authorisation is still pending, it says so and tells you to hold the power button on the aircraft. Anything it moves, it can put back.
 
 Remote ID serials resolve to a vendor and model family from `/drone_rid.db` on the card — 13 ANSI/CTA-2063A manufacturer prefixes covering DJI, Autel, Skydio, Parrot, AgEagle, Microdrones, Percepto, Wingtra, Inspired Flight, Harris Aerial and XAG, each verified against the live IEEE registries. Without it a compliant aircraft shows a raw serial instead of a maker. It is a plain file on the card, so a new model or a new registration is a file drop, not a reflash — get it in the [SD Data Pack](https://flash.halehound.com).
 
@@ -396,7 +396,7 @@ FAT32 formatted MicroSD. Nothing is required — every module handles missing fo
 ├── subghz/         .sub files for Sub Read (organize into subfolders)
 ├── eapol/          EAPOL/PMKID captures
 ├── wardriving/     GPS-tagged AP logs
-├── wp_loot/        WhisperPair + BLE Predator + Flock You loot
+├── wp_loot/        WhisperPair + BLE Predator + Flockjaw loot
 ├── loot/           BLE Predator GATT dumps + honeypot loot
 ├── creds.txt       Custom credentials for IoT Recon (optional)
 ├── iot_recon.txt   IoT Recon attack reports
